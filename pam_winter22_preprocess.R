@@ -5,10 +5,8 @@ source("utils/loadrawdata.R")
 options("digits.secs"=6)
 
 # Load data from directories
-# For some reason we only have original data from Participant 1-10 in the folder.
-# So load the data from the RDA file instead!
 D <- LoadFromDirectory("data/PAM", event="Game", sample="BlinkLog")
-D <- LoadFromDirectory("testdata2/PAM/", event="Game", sample="BlinkLog")
+#D <- LoadFromDirectory("testdata2/PAM/", event="Game", sample="BlinkLog")
 save(D, file = 'data_pam_raw.rda', compress=TRUE)
 
 load('data_pam_raw.rda')
@@ -156,9 +154,78 @@ L = L %>% mutate(Easiest = ifelse(Easiest == "Yes",1,0),
                  Hardest = ifelse(Hardest == "Yes",1,0),
                  Hardest = ifelse(is.na(Hardest),0,Hardest))
 
+# Create Normalized versions of pacing, how much help, liked help
+
+L = L %>% mutate(HowMuchHelpNormalized = `“How much did you feel the game helped you?”`,
+                 HowMuchHelpNormalized = ((HowMuchHelpNormalized-1)/6),
+                 LikedHelpNormalized = `“I liked how the game helped me.”`,
+                 LikedHelpNormalized = ((LikedHelpNormalized-1)/6),
+                 PacingNormalized = `"I felt the pacing of the game was"`,
+                 PacingNormalized = ((PacingNormalized-1)/6),
+                 IrritationNormalized = `"How irritated did you feel in this condition?"`,
+                 IrritationNormalized = ((IrritationNormalized-1)/6))
+
+# TODO: Specific questions to each PAM.
+L = L %>% mutate(`"I liked it when she took the fish up a notch at times, when I couldn’t"` = ((IOPositiveQuote-1)/6),
+                 `"It irritated me that she interefered with the game."` = ((IONegativeQuote-1)/6),
+                 `"I think it was useful that he got strong and helped me reel in the fish."` = ((ASPositiveQuote-1)/6),
+                 `"He got stronger, but I didn’t think it helped me much."` = ((ASNegativeQuote-1)/6),
+                 `"When the fish stood still, it was like saying “Let’s just try that again!"` = ((MFPositiveQuote-1)/6),
+                 `"When the fish stood still, it felt like the game went slower."` = ((MFNegativeQuote-1)/6))
+
+
+# Make sure questions not available in NO condition are reported as "0".
+L = L %>% mutate(HowMuchHelpNormalized = ifelse(Condition == "NO",0,HowMuchHelpNormalized),
+                 LikedHelpNormalized = ifelse(Condition == "NO",0,LikedHelpNormalized))
+
+
+## Get Experiment-wide questions
+
+L = L %>% mutate(EnjoyedPlaying = `"I enjoyed playing this game very much."`,
+                 EnjoyedPlaying = ((EnjoyedPlaying-1)/6),
+                 GoodAtPlaying = `"I felt I was good at playing this game."`,
+                 GoodAtPlaying = ((HowMuchHelpNormalized-1)/6),
+                 EnjoyedGameStyle = `"I enjoyed the way the game was styled."`,
+                 EnjoyedGameStyle = ((EnjoyedGameStyle-1)/6),
+                 ThinkHowToDoBetter = `"I was thinking about how I could be better at catching fish."`,
+                 ThinkHowToDoBetter = ((ThinkHowToDoBetter-1)/6),
+                 LosingFishNotIrritate = `"Losing the fish is not something that irritates me."`,
+                 LosingFishNotIrritate = ((LosingFishNotIrritate-1)/6),
+                 BadAtBlinkingIrritate = `"It irritated me how bad I was at blinking correctly."`,
+                 BadAtBlinkingIrritate = ((BadAtBlinkingIrritate-1)/6),
+                 GameNotRegisterIrritate = `"It irritated me when the game did not register my blinks."`,
+                 GameNotRegisterIrritate = ((GameNotRegisterIrritate-1)/6),
+                 PerceivedPerformance = gsub("%", "", L$PerceivedPerformance),
+                 PerceivedPerformance = (as.numeric(PerceivedPerformance)/100))
+
+
 D <- D %>% left_join(L, by=c('Condition' = 'Condition', 'Participant' = 'Participant'))
 
 
+############
+# Factor
+#############
+
+# Replace NA values with a '0' rating for help variables.
+D = D %>% mutate(LikedHelp.f = `“I liked how the game helped me.”`,
+                 LikedHelp.f = ifelse(is.na(LikedHelp.f),1,LikedHelp.f),
+                 HowMuchHelp.f = `“How much did you feel the game helped you?”`,
+                 HowMuchHelp.f = ifelse(is.na(HowMuchHelp.f),1,HowMuchHelp.f))
+
+D = D %>% mutate(Condition.f = factor(Condition, levels=c("NO", "AS","IO","MF")),
+             Perc.f = factor(PerceivedControlEpisode, levels=c("1","2","3","4","5","6","7")),
+             Frust.f = factor(FrustrationEpisode, levels=c("1","2","3","4","5","6","7")),
+             Pacing.f = factor(`"I felt the pacing of the game was"`, levels=c("1","2","3","4","5","6","7")),
+             LikedHelp.f = factor(LikedHelp.f, levels=c("1","2","3","4","5","6","7")),
+             HowMuchHelp.f = factor(HowMuchHelp.f, levels=c("1","2","3","4","5","6","7")),
+             Irritation.f = factor(`"How irritated did you feel in this condition?"`, levels=c("1","2","3","4","5","6","7")),
+             Gender.f = factor(Gender, levels=c("F","M")),
+             Fatigue.f = factor(Fatigue, levels=c("No", "Yes")),
+             BCIExp.f = factor(BCIExp, levels=c("Yes","No")),
+             Order.f = factor(Order, levels=c(1,2,3,4)),
+             Hardest.f = factor(Hardest, levels=c(1,0)),
+             Easiest.f = factor(Easiest, levels=c(1,0)),
+             Participant.f = as.factor(Participant))
 
 #############
 # Save to RDA
