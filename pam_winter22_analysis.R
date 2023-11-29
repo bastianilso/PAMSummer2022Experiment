@@ -21,12 +21,18 @@ load('data_pam.rda')
 # need to make graphs of the 4 conditions (NO, IO, AS, ..) in terms of "pacing", "how much help", "how was helped"
 
 
-
+#slice(1)
 
 
 #############
 # Summaries
 #############
+posTrialLabels = c("OverrideInput","AccInput","AugSuccess","ExplicitSham","AssistSuccess")
+
+# participants excluded due to blink recognition issues.
+excluded_participants = c(17)
+
+D = D %>% filter(!Participant %in% excluded_participants)
 
 # Experiment-wide variables
 Se <- D %>% group_by(Participant) %>%
@@ -42,7 +48,7 @@ Se <- D %>% group_by(Participant) %>%
 St <- D %>% group_by(Participant, Condition) %>%
   summarise(rejInput = sum(TrialResult == "RejInput", na.rm=T),
             accInput = sum(TrialResult == "AccInput", na.rm=T),
-            posTrial = sum(TrialResult == "OverrideInput" | TrialResult == "AccInput" | TrialResult == "AugSuccess" | TrialResult == "ExplicitSham" | TrialResult == "AssistSuccess", na.rm=T),
+            posTrial = sum(TrialResult %in% posTrialLabels, na.rm=T),
             triggerTrial = sum(TrialResult == "AccInput" | TrialResult == "AugSuccess" | TrialResult == "AssistSuccess", na.rm=T),
             assistInput = sum(TrialResult %in% c("AssistSuccess", "AugSuccess"), na.rm=T),
             explicitSham = sum(TrialResult %in% c("ExplicitSham", "OverrideInput"), na.rm=T),
@@ -52,10 +58,17 @@ St <- D %>% group_by(Participant, Condition) %>%
             #fishCaught = sum(FishEvent == "FishCaught", na.rm=T),
             #fishCaught2 = sum(Event == "GameDecision" & fishFeedback == 1, na.rm=T),
             fishCaught = sum(TrialFeedback == "FishCaught", na.rm=T),
+            fishCaught_n = scales::rescale(fishCaught, from=c(0, 25)),
             fishReel = sum(TrialFeedback == "Reel", na.rm=T),
+            fishReel_a = sum(TrialFeedback %in% c("Reel","FishCaught"), na.rm=T),
+            fishReel_b = sum(TrialFeedback %in% c("Reel","FishCaught") & TrialResult == "AccInput", na.rm=T),
+            fishReel_n = scales::rescale(fishReel_a, from=c(0, 25)),
             fishStay = sum(TrialFeedback == "Stay", na.rm=T),
+            fishStay_n = scales::rescale(fishStay, from=c(0, 25)),
             fishUnreel = sum(TrialFeedback == "Unreel", na.rm=T),
+            fishUnreel_n = scales::rescale(fishUnreel, from=c(0, 25)),
             fishLost = sum(TrialFeedback == "FishLost", na.rm=T),
+            fishLost_n = scales::rescale(fishLost, from=c(0, 25)),
             notFishCaught = sum(Event == "GameDecision" & lead(Event) != "FishEvent"),
             reel = sum(Event == "GameDecision" & lead(Event) != "FishEvent" & !(TrialResult %in% c("RejInput", "AssistFail", "MitigateFail"))),
             escape = sum(Event == "GameDecision" & lead(Event) != "FishEvent" & (TrialResult %in% c("RejInput"))),
@@ -71,6 +84,7 @@ St <- D %>% group_by(Participant, Condition) %>%
             pam_rate = unique(ifelse(Condition == "MF", trial_rate_mitigate, pam_rate)),
             accRecogRate = posTrial / sum(TrialGoal == "OverrideInput" | TrialGoal == "AccInput" | TrialGoal == "AugSuccess" | TrialGoal == "ExplicitSham" | TrialGoal == "AssistSuccess", na.rm=T),
             time_total = sum(time_delta),
+            time_total_n = scales::rescale(time_total, from=c(0, 200)),
             Gender = unique(Gender),
             Gender.f = unique(Gender.f),
             Age = unique(Age),
@@ -103,10 +117,14 @@ St <- D %>% group_by(Participant, Condition) %>%
             MFPositiveQuote = unique(MFPositiveQuote),
             MFNegativeQuote = unique(MFNegativeQuote),
             Condition.f = unique(Condition.f),
+            ConditionLabel = unique(ConditionLabel),
             Participant.f = unique(Participant.f)
             )
 
-
+St = St %>% mutate(ConditionLabel = ifelse(ConditionLabel == "AugmentedSucces","Aug.\n Success",ConditionLabel),
+                   ConditionLabel = ifelse(ConditionLabel == "MitigatedFailure","Mit.\n Failure",ConditionLabel),
+                   ConditionLabel = ifelse(ConditionLabel == "OverrideInput","Overr.\n Input",ConditionLabel),
+                   ConditionLabel = ifelse(ConditionLabel == "Control","Ref.",ConditionLabel))
 
 # Blink counts
 St <- D %>% ungroup() %>% group_by(Participant, Condition) %>%
@@ -114,13 +132,16 @@ St <- D %>% ungroup() %>% group_by(Participant, Condition) %>%
   ) %>% right_join(St)
 
 # Group by input window. Count the number of attempts in each window.
-St <- D %>% ungroup() %>% filter(Period %in% c("OpenPeriod")) %>% group_by(Participant, Condition, InputWindowOrderFilledSoft) %>%
+St <- D %>% ungroup() %>% filter(PeriodWithDecision %in% c("OpenPeriod")) %>% group_by(Participant, Condition, InputWindowOrderFilledSoft) %>%
   summarize(blink_recog_window = ifelse(sum(Event %in% c("EyeOpening","EyeClosing") > 0), 1,0), #Whether Blinks happened in the window
             blink_recog_window_count = sum(Event %in% c("EyeOpening","EyeClosing")), #How much Blink happened in the window
-            time_window = sum(time_delta)) %>%
+            time_window = sum(time_delta),
+            TrialResult = paste(na.omit(unique(TrialResultWindow)), collapse=" ")) %>% 
   filter(InputWindowOrderFilledSoft > -1) %>% ungroup() %>% group_by(Participant, Condition) %>%
   summarize(blink_recog_trial = sum(blink_recog_window > 0),
             blink_recog_window = sum(blink_recog_window),
+            blink_conv_trial = sum(blink_recog_window > 0 & TrialResult %in% posTrialLabels),
+            blink_recog_window_count = sum(blink_recog_window_count),
             time_window = sum(time_window),
             time_window_min = time_window / 60) %>%
   right_join(St)
@@ -141,7 +162,7 @@ Si <- Si %>% filter(!InputWindowOrderFilled == -1) %>%
   mutate(feedback_delay = feedback_stamp - last_attempt_stamp,
          feedback_delay = as.numeric(feedback_delay))
 
-fig %>% add_trace(x=~InputWindowOrderFilled, y=~feedback_delay, data=Si, type='scatter')
+#fig %>% add_trace(x=~InputWindowOrderFilled, y=~feedback_delay, data=Si, type='scatter')
 
 St <- Si %>% group_by(Participant, Condition) %>%
   summarize(mean_delay = mean(feedback_delay)) %>% right_join(St) %>%
@@ -157,6 +178,23 @@ St <- St %>% ungroup() %>%
          session = 1,
          session = cumsum(session))
 
+# Calculate blink recognition and blink conversion rate
+St <- St %>% mutate(
+  # blink recognition: in how many trials were blinks recognized out of 20
+  blink_recog = blink_recog_trial / totalTrials,
+  # blink conv. rate: how many blinks triggered positive feedback out of total blink attempts.
+  blink_conv_rate = blink_conv_trial / blink_recog_window_count
+)
+
+# Calculate a "help rate" in %
+St <- St %>% mutate(
+  rate_help = 0,
+  rate_help = ifelse(Condition == "AS", assistInput, rate_help),
+  rate_help = ifelse(Condition == "IO", explicitSham, rate_help),
+  rate_help = ifelse(Condition == "MF", mitigateFail, rate_help),
+  rate_help = rate_help / totalTrials
+)
+
 Sp <- St %>% ungroup() %>% group_by(Participant) %>%
   summarize(Gender = unique(Gender),
             Age = unique(Age),
@@ -171,40 +209,328 @@ Sp <- St %>% ungroup() %>% group_by(Participant) %>%
 Sc <- St %>% group_by(Condition) %>% 
   summarize(
     PercNormalized_SD = sd(PercNormalized),
+    Perc.f_SD = sd(as.numeric(Perc.f)),
     FrustNormalized_SD = sd(FrustNormalized),
+    Frust.f_SD = sd(as.numeric(Frust.f)),
     rate_feedback_SD = sd(rate_feedback),
-    rate_blink_SD = sd(rate_blink),
+    rate_blink_SD = sd(blink_conv_rate),
+    rate_help_SD = sd(rate_help),
     blink_recog_SD = sd(accRecogRate),
     fishCaught_SD = sd(fishCaught),
     fishLost_SD = sd(fishLost),
+    fishReel_SD = sd(fishReel),
+    fishUnreel_SD = sd(fishUnreel),
     time_total_SD = sd(time_total),
     HowMuchHelpNormalized_SD = sd(HowMuchHelpNormalized),
+    HowMuchHelp.f_SD = sd(as.numeric(HowMuchHelp.f)),
     LikedHelpNormalized_SD = sd(LikedHelpNormalized),
+    LikedHelp.f_SD = sd(as.numeric(LikedHelp.f)),
     PacingNormalized_SD = sd(PacingNormalized),
+    Pacing.f_SD = sd(as.numeric(Pacing.f)),
     IrritationNormalized_SD = sd(IrritationNormalized),
+    Irritation.f_SD = sd(as.numeric(Irritation.f)),
     PercNormalized = mean(PercNormalized),
+    Perc.f = mean(as.numeric(Perc.f)),
     FrustNormalized = mean(FrustNormalized),
+    Frust.f = mean(as.numeric(Frust.f)),
     rate_feedback = mean(rate_feedback),
-    rate_blink = mean(rate_blink),
+    rate_blink = mean(blink_conv_rate),
+    rate_help = mean(rate_help),
     blink_recog = mean(accRecogRate),
     fishCaught = mean(fishCaught),
     fishLost = mean(fishLost),
+    fishReel = mean(fishReel),
+    fishUnreel = mean(fishUnreel),
     HowMuchHelpNormalized = mean(HowMuchHelpNormalized),
+    HowMuchHelp.f = mean(as.numeric(HowMuchHelp.f)),
     LikedHelpNormalized = mean(LikedHelpNormalized),
+    LikedHelp.f = mean(as.numeric(LikedHelp.f)),
     PacingNormalized = mean(PacingNormalized),
+    Pacing.f = mean(as.numeric(Pacing.f)),
     IrritationNormalized = mean(IrritationNormalized),
+    Irritation.f = mean(as.numeric(Irritation.f)),
     Hardest = sum(Hardest),
     Easiest = sum(Easiest),
     time_total = mean(time_total)
   )
 
+# ICC Scores
 
+#PercNormalized = St %>% ungroup() %>% select(Participant, PercNormalized, Condition) %>%
+#  pivot_wider(names_from = Participant, values_from = PercNormalized) %>%
+#  ungroup() %>% select(-Condition) %>% 
+#  psych::ICC(.) %>% view()
+
+
+
+Sicc <- tibble(
+  PercNormalized = St %>% ungroup() %>% select(Participant, PercNormalized, Condition) %>%
+    pivot_wider(names_from = Participant, values_from = PercNormalized) %>%
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  FrustNormalized = St %>% ungroup() %>% select(Participant, FrustNormalized, Condition) %>%
+    pivot_wider(names_from = Participant, values_from = FrustNormalized) %>%
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  HowMuchHelpNormalized = St %>% ungroup() %>% select(Participant, HowMuchHelpNormalized, Condition) %>%
+    filter(Condition != "NO") %>%
+    pivot_wider(names_from = Participant, values_from = HowMuchHelpNormalized) %>%
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  LikedHelpNormalized = St %>% ungroup() %>% select(Participant, LikedHelpNormalized, Condition) %>%
+    filter(Condition != "NO") %>%
+    pivot_wider(names_from = Participant, values_from = LikedHelpNormalized) %>%
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  PacingNormalized = St %>% ungroup() %>% select(Participant, PacingNormalized, Condition) %>%
+    pivot_wider(names_from = Participant, values_from = PacingNormalized) %>%
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  IrritationNormalized = St %>% ungroup() %>% select(Participant, IrritationNormalized, Condition) %>%
+    pivot_wider(names_from = Participant, values_from = IrritationNormalized) %>%
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]], 
+  Hardest = St %>% ungroup() %>% select(Participant, Hardest, Condition) %>%
+    pivot_wider(names_from = Participant, values_from = Hardest) %>% 
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  Easiest = St %>% ungroup() %>% select(Participant, Easiest, Condition) %>%
+    pivot_wider(names_from = Participant, values_from = Easiest) %>%
+    ungroup() %>% select(-Condition) %>% 
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+) %>% 
+  select(`Perc. Control` = PercNormalized, `Frustration` = FrustNormalized, `Help Quantity` = HowMuchHelpNormalized,
+         `Help Appeal` = LikedHelpNormalized, `Pacing` = PacingNormalized, `Irritation` = IrritationNormalized, Hardest, Easiest) %>%
+  pivot_longer(cols=everything(), names_to = "Variables", values_to="ICC3")
+
+
+#test = St %>% ungroup() %>% select(Participant, PercNormalized, Condition) %>%
+#  pivot_wider(names_from = Participant, values_from = PercNormalized) %>%
+#  ungroup() %>% select(-Condition)
 
 #############
 # Correlations
 #############
 
-GGally::ggcorr(St)
+corr_colvars = c("LooseNotIrritate",
+                 "EnjoyGameStyle",
+                 "EnjoyGame",
+                 "IrriBadAtBlink",
+                 "ThinkBetterFish",
+                 "FeltGoodPlaying",
+                 "IrriRegisterBlink",
+                 "HowMuchHelpNormalized",
+                 "LikedHelpNormalized",
+                 "ASPositiveQuote",
+                 "MFPositiveQuote",
+                 "MFNegativeQuote",
+                 "ASNegativeQuote",
+                 "IONegativeQuote",
+                 "IOPositiveQuote")
+
+corr_rowvars = c(corr_colvars, "PercNormalized", 
+                 "FrustNormalized",
+                 "rate_blink",
+                 "accRecogRate",
+                 "rate_feedback",
+                 "fishCaught",
+                 "fishLost",
+                 "fishReel",
+                 "fishUnreel",
+                 "HowMuchHelpNormalized",
+                 "LikedHelpNormalized",
+                 "PacingNormalized",
+                 "IrritationNormalized",
+                 "time_total",
+                 "Order",
+                 "Hardest",
+                 "Easiest",
+                 "rate_help")
+
+# There is an expected order effect on LikedHelp and HowMuchHelp because 
+# the default "reference condition" is included in it.
+
+Ste = St %>% left_join(Se) %>% 
+        rename(LooseNotIrritate = `"Losing the fish is not something that irritates me."`,
+              EnjoyGameStyle = `"I enjoyed the way the game was styled."`,
+              EnjoyGame = `"I enjoyed playing this game very much."`,
+              IrriBadAtBlink = `"It irritated me how bad I was at blinking correctly."`,
+              ThinkBetterFish = `"I was thinking about how I could be better at catching fish."`,
+              FeltGoodPlaying = `"I felt I was good at playing this game."`,
+              IrriRegisterBlink = `"It irritated me when the game did not register my blinks."`) %>%
+        group_by(Participant) %>%
+        mutate(IOPositiveQuote = sum(IOPositiveQuote, na.rm=T),
+               IONegativeQuote = sum(IONegativeQuote, na.rm=T),
+               MFPositiveQuote = sum(MFPositiveQuote, na.rm=T),
+               MFNegativeQuote = sum(MFNegativeQuote, na.rm=T),
+               ASPositiveQuote = sum(ASPositiveQuote, na.rm=T),
+               ASNegativeQuote = sum(ASNegativeQuote, na.rm=T))
+
+Stef = Ste %>% filter(Condition != "NO")
+help_only = c("HowMuchHelpNormalized","LikedHelpNormalized")
+
+corr_table = expand.grid(corr_colvars, corr_rowvars) %>% 
+  rename(x = Var1, y=Var2) %>% rowwise() %>%
+  mutate(the_coef = cor(Ste[[x]],Ste[[y]], method="spearman"),
+         help_coef = cor(Stef[[x]],Stef[[y]], method="spearman"),
+         the_coef = ifelse(x %in% help_only, help_coef, the_coef),
+         z = ifelse(y %in% help_only, help_coef, the_coef),
+         help_coef = NULL,
+         the_coef = NULL
+        )
+         
+         
+
+corr_table_f = corr_table %>% 
+  mutate(across(everything(), 
+         ~ str_replace_all(.x, c("Order" = "Condition Order",
+                                 "FrustNormalized" = "Frustration",
+                                 "PercNormalized" = "Perc. Control",
+                                 "Participant.f" = "Participant",
+                                 "LikedHelp.f" = "Help Appeal",
+                                 "rate_blink" = "Blink Conv. Rate",
+                                 "rate_feedback" = "Pos. Feedback",
+                                 "fishCaught" = "Fish Caught",
+                                 "fishLost" = "Fish Lost",
+                                 "accRecogRate" = "Blink Recognition",
+                                 "time_total" = "Duration",
+                                 "fishReel" = "Fish Reel",
+                                 "rate_help" = "Help Rate",
+                                 "fishUnreel" = "Fish Unreel",
+                                 "HowMuchHelpNormalized" = "Help Quantity",
+                                 "LikedHelpNormalized" = "Help Appeal",
+                                 "PacingNormalized" = "Pacing",
+                                 "IrritationNormalized" = "Irritation",
+                                 "LooseNotIrritate" = "Losing the fish is not \n something that irritates me.",
+                                 "EnjoyGameStyle" = "I enjoyed the way \n the game was styled.",
+                                 "EnjoyGame" = "I enjoyed playing this \n game very much.",
+                                 "IrriBadAtBlink" = "It irritated me how bad \n I was at blinking correctly.",
+                                 "ThinkBetterFish" = "I was thinking about how \n I could be better at catching fish.",
+                                 "FeltGoodPlaying" = "I felt I was good at \n playing this game.",
+                                 "IrriRegisterBlink" = "It irritated me when the game \n did not register my blinks.",
+                                 "IOPositiveQuote" =  "I liked it when she took the \n fish up a notch at times, when I couldn’t",
+                                 "IONegativeQuote" = "It irritated me that she \n interefered with the game.",
+                                 "ASPositiveQuote" ="I think it was useful that he got \n strong and helped me reel in the fish.",
+                                 "ASNegativeQuote" = "He got stronger, but I didn’t \n think it helped me much.",
+                                 "MFPositiveQuote" = "When the fish stood still, it was like \n saying “Let’s just try that again!",
+                                 "MFNegativeQuote" = "When the fish stood still, it felt \n like the game went slower."
+                                 ))))
+              
+
+corr_colvars_f = rev(c(
+  "When the fish stood still, it was like \n saying “Let’s just try that again!",
+  "When the fish stood still, it felt \n like the game went slower.",
+  "I liked it when she took the \n fish up a notch at times, when I couldn’t",
+  "It irritated me that she \n interefered with the game.",
+  "I think it was useful that he got \n strong and helped me reel in the fish.",
+  "He got stronger, but I didn’t \n think it helped me much.",
+  "Losing the fish is not \n something that irritates me.",
+  "I enjoyed the way \n the game was styled.",
+  "I enjoyed playing this \n game very much.",
+  "It irritated me how bad \n I was at blinking correctly.",
+  "I was thinking about how \n I could be better at catching fish.",
+  "I felt I was good at \n playing this game.",
+  "It irritated me when the game \n did not register my blinks."
+))
+corr_rowvars_f = rev(c(corr_colvars_f,
+  "Perc. Control",
+  "Frustration",
+  "Help Quantity",
+  "Help Appeal",
+  "Pacing",
+  "Irritation",
+  "Hardest",
+  "Easiest",
+  "Blink Recognition",
+  "Blink Conv. Rate",
+  "Pos. Feedback",
+  "Help Rate",
+  "Fish Caught",
+  "Fish Lost",
+  "Fish Reel",
+  "Fish Unreel",
+  "Duration",
+  "Condition Order"
+  ))
+               
+fig_p = plot_ly(data = corr_table_f, x=~x, xgap=3, ygap=3, y=~y, z=~z, 
+        texttemplate="%{z:.1f}", type = "heatmap", colors=colorRampPalette(colors = c("white", "#000000"))(20),
+        showscale=F, showlegend=F, textfont=list(size=18)) %>%
+  layout(xaxis=list(title="", side="top", tickfont = list(size = 14),
+                    categoryorder = "array",
+                    categoryarray = corr_colvars_f),
+         yaxis=list(title="", tickfont = list(size = 16),
+                    categoryorder = "array",
+                    categoryarray = corr_rowvars_f))
+orca(fig_p, "fig/corrmap_vars.pdf", width=1800, height=1800)
+
+# cor(x = St[[x]], y = St[[y]])
+#StCorr = GGally::ggcorr(St %>% ungroup() %>% left_join(Se) 
+#               %>% select(any_of(corr_rowvars)),
+#               label=T, label_size=2)
+
+# pacing (x), enjoying game (y)
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(rate_blink,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1)),
+         yaxis=list(range=c(-0.1,1.1)))
+fig_p
+orca(fig_p, "fig/corrmap_vars.pdf", width=1800, height=1800)
+
+# perceived control (x), enjoyment (y)
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(PercNormalized,amount=.02), 
+            y=~jitter(`"I enjoyed playing this game very much."`,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1)),
+         yaxis=list(range=c(-0.1,8)))
+fig_p
+
+# IOPositive (x), enjoyment (y)
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(IONegativeQuote,amount=.02), 
+            y=~jitter(`"I enjoyed playing this game very much."`,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,8)),
+         yaxis=list(range=c(-0.1,8)))
+fig_p
+
+# IO Positive (x), self-blame (y)
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(IOPositiveQuote,amount=.02), 
+            y=~jitter(`"It irritated me how bad I was at blinking correctly."`,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,8)),
+         yaxis=list(range=c(-0.1,8)))
+fig_p
+
+
+# Enjoy styling (x) enjoy game (y)
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(`"I enjoyed the way the game was styled."`,amount=.2), 
+            y=~jitter(`"I enjoyed playing this game very much."`,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,8)),
+         yaxis=list(range=c(-0.1,8)))
+fig_p
+
+# perceived control (x), liked help (y)
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(PercNormalized,amount=.02), 
+            y=~jitter(LikedHelpNormalized,amount=.02), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1)),
+         yaxis=list(range=c(-0.1,1.1)))
+fig_p
+
 
 #############
 # Exploratory Factor Analysis
@@ -246,13 +572,13 @@ cortest.bartlett(Stf %>% select(-Condition.f))
 #############
 # Latex Table: Condition Quote Ratings
 #############
-Sq <- St %>% select(Participant,
-                    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = IOPositiveQuote,
-                    `"It irritated me that she interefered \n with the game."` = IONegativeQuote,
-                    `"I think it was useful that he got \n strong & helped me reel in the fish."` = ASPositiveQuote,
-                    `"He got stronger, but I didn’t think \n it helped me much."` = ASNegativeQuote,
-                    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = MFPositiveQuote,
-                    `"When the fish stood still, it felt \n like the game went slower."` = MFNegativeQuote)
+Sq <- St %>% group_by(Participant) %>% summarize(
+                    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = sum(IOPositiveQuote, na.rm=T),
+                    `"It irritated me that she interefered \n with the game."` = sum(IONegativeQuote, na.rm=T),
+                    `"I think it was useful that he got \n strong & helped me reel in the fish."` = sum(ASPositiveQuote, na.rm=T),
+                    `"He got stronger, but I didn’t think \n it helped me much."` = sum(ASNegativeQuote,na.rm=T),
+                    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = sum(MFPositiveQuote,na.rm=T),
+                    `"When the fish stood still, it felt \n like the game went slower."` = sum(MFNegativeQuote,na.rm=T))
 
 Sq <- St %>% select(Participant,
                     IOPositiveQuote,
@@ -264,6 +590,142 @@ Sq <- St %>% select(Participant,
 
 Sq <- Sq %>% pivot_longer(cols=-c("Participant"), names_to = "Variable") %>% drop_na() %>%
   mutate(y = 1)
+
+# to ensure all histogram bins have same sizes in all cases, add one dummy value to each.
+Sqv = Sq %>%
+  add_row(tibble_row(
+    Participant = 0,
+    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = 1,
+    `"It irritated me that she interefered \n with the game."` = 1,
+    `"I think it was useful that he got \n strong & helped me reel in the fish."` = 1,
+    `"He got stronger, but I didn’t think \n it helped me much."` = 1,
+    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = 1,
+    `"When the fish stood still, it felt \n like the game went slower."` = 1
+  )) %>%
+  add_row(tibble_row(
+    Participant = 0,
+    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = 2,
+    `"It irritated me that she interefered \n with the game."` = 2,
+    `"I think it was useful that he got \n strong & helped me reel in the fish."` = 2,
+    `"He got stronger, but I didn’t think \n it helped me much."` = 2,
+    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = 2,
+    `"When the fish stood still, it felt \n like the game went slower."` = 2,
+  )) %>%
+  add_row(tibble_row(
+    Participant = 0,
+    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = 3,
+    `"It irritated me that she interefered \n with the game."` = 3,
+    `"I think it was useful that he got \n strong & helped me reel in the fish."` = 3,
+    `"He got stronger, but I didn’t think \n it helped me much."` = 3,
+    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = 3,
+    `"When the fish stood still, it felt \n like the game went slower."` = 3
+  )) %>%
+  add_row(tibble_row(
+    Participant = 0,
+    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = 4,
+    `"It irritated me that she interefered \n with the game."` = 4,
+    `"I think it was useful that he got \n strong & helped me reel in the fish."` = 4,
+    `"He got stronger, but I didn’t think \n it helped me much."` = 4,
+    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = 4,
+    `"When the fish stood still, it felt \n like the game went slower."` = 4
+  )) %>%
+  add_row(tibble_row(
+    Participant = 0,
+    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = 5,
+    `"It irritated me that she interefered \n with the game."` = 5,
+    `"I think it was useful that he got \n strong & helped me reel in the fish."` = 5,
+    `"He got stronger, but I didn’t think \n it helped me much."` = 5,
+    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = 5,
+    `"When the fish stood still, it felt \n like the game went slower."` = 5
+  )) %>%
+  add_row(tibble_row(
+    Participant = 0,
+    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = 6,
+    `"It irritated me that she interefered \n with the game."` = 6,
+    `"I think it was useful that he got \n strong & helped me reel in the fish."` = 6,
+    `"He got stronger, but I didn’t think \n it helped me much."` = 6,
+    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = 6,
+    `"When the fish stood still, it felt \n like the game went slower."` = 6
+  )) %>%
+  add_row(tibble_row(
+    Participant = 0,
+    `"I liked it when she took the fish up \n a notch at times, when I couldn’t"` = 7,
+    `"It irritated me that she interefered \n with the game."` = 7,
+    `"I think it was useful that he got \n strong & helped me reel in the fish."` = 7,
+    `"He got stronger, but I didn’t think \n it helped me much."` = 7,
+    `"When the fish stood still, it was \n like saying “Let’s just try that again!"` = 7,
+    `"When the fish stood still, it felt \n like the game went slower."` = 7
+  ))
+
+
+Sq_table_sd = Sq %>% select(-Participant) %>% 
+  summarize(across(everything(), list(sd = sd))) %>%
+  pivot_longer(cols=everything(), names_to = "Variable") %>%
+  mutate(value = format(round(value,2), nsmall = 2),
+         Variable = NULL) %>%
+  rename(SD = value)
+
+
+Sq_table = Sq %>% select(-Participant) %>% 
+  summarize(across(everything(), list(mean = mean))) %>%
+  pivot_longer(cols=everything(), names_to = "Variable") %>%
+  mutate(value = format(round(value,2), nsmall = 2)) %>%
+  rename(Mean = value, Question = Variable)
+
+Sq_table = Sq_table %>% cbind(Sq_table_sd) %>%
+  mutate(Histogram = " ",
+         Question = gsub("_mean", "", Question))
+
+
+fig_p <- fig %>%
+  add_histogram(data=Sq, nbinsx = 7, x=~`"I liked it when she took the fish up \n a notch at times, when I couldn’t"`, color=I('white'),
+                marker = list(line = list(color = "black", width = 1.5))) %>%
+  layout(showlegend=F, margin=list(l=7, r=1, t=1, b=1),
+         xaxis=list(range=c(0.45,7.55), ticks='none', visible=T, dtick=1, title="", showline=T, tickvals=NULL, showgrid=F, mirror=T),
+         yaxis=list(range=c(0.95,11.5), title="", tickvals=NULL, ticks='none', showline=T, shownumbers=F, visible=T, showgrid=F, mirror=T))
+orca(fig_p, "fig/hist_LikeSheFish.pdf", width=450, height=250)
+
+fig_p <- fig %>%
+  add_histogram(data=Sq, nbinsx = 7, x=~`"It irritated me that she interefered \n with the game."`, color=I('white'),
+                marker = list(line = list(color = "black", width = 1.5))) %>%
+  layout(showlegend=F, margin=list(l=7, r=1, t=1, b=1),
+         xaxis=list(range=c(0.45,7.55), ticks='none', visible=T, dtick=1, title="", showline=T, tickvals=NULL, showgrid=F, mirror=T),
+         yaxis=list(range=c(0.95,11.5), title="", tickvals=NULL, ticks='none', showline=T, shownumbers=F, visible=T, showgrid=F, mirror=T))
+orca(fig_p, "fig/hist_IrriSheInterfere.pdf", width=450, height=250)
+
+fig_p <- fig %>%
+  add_histogram(data=Sq, nbinsx = 7, x=~`"I think it was useful that he got \n strong & helped me reel in the fish."`, color=I('white'),
+                marker = list(line = list(color = "black", width = 1.5))) %>%
+  layout(showlegend=F, margin=list(l=7, r=1, t=1, b=1),
+         xaxis=list(range=c(0.45,7.55), ticks='none', visible=T, dtick=1, title="", showline=T, tickvals=NULL, showgrid=F, mirror=T),
+         yaxis=list(range=c(0.95,11.5), title="", tickvals=NULL, ticks='none', showline=T, shownumbers=F, visible=T, showgrid=F, mirror=T))
+orca(fig_p, "fig/hist_UsefulHeStrong.pdf", width=450, height=250)
+
+fig_p <- fig %>%
+  add_histogram(data=Sq, nbinsx = 7, x=~`"He got stronger, but I didn’t think \n it helped me much."`, color=I('white'),
+                marker = list(line = list(color = "black", width = 1.5))) %>%
+  layout(showlegend=F, margin=list(l=7, r=1, t=1, b=1),
+         xaxis=list(range=c(0.45,7.55), ticks='none', visible=T, dtick=1, title="", showline=T, tickvals=NULL, showgrid=F, mirror=T),
+         yaxis=list(range=c(0.95,11.5), title="", tickvals=NULL, ticks='none', showline=T, shownumbers=F, visible=T, showgrid=F, mirror=T))
+orca(fig_p, "fig/hist_StrongerNoHelp.pdf", width=450, height=250)
+
+fig_p <- fig %>%
+  add_histogram(data=Sq, nbinsx = 7, x=~`"When the fish stood still, it was \n like saying “Let’s just try that again!"`, color=I('white'),
+                marker = list(line = list(color = "black", width = 1.5))) %>%
+  layout(showlegend=F, margin=list(l=7, r=1, t=1, b=1),
+         xaxis=list(range=c(0.45,7.55), ticks='none', visible=T, dtick=1, title="", showline=T, tickvals=NULL, showgrid=F, mirror=T),
+         yaxis=list(range=c(0.95,11.5), title="", tickvals=NULL, ticks='none', showline=T, shownumbers=F, visible=T, showgrid=F, mirror=T))
+orca(fig_p, "fig/hist_StillFishTryAgain.pdf", width=450, height=250)
+
+fig_p <- fig %>%
+  add_histogram(data=Sq, nbinsx = 7, x=~`"When the fish stood still, it felt \n like the game went slower."`, color=I('white'),
+                marker = list(line = list(color = "black", width = 1.5))) %>%
+  layout(showlegend=F, margin=list(l=7, r=1, t=1, b=1),
+         xaxis=list(range=c(0.45,7.55), ticks='none', visible=T, dtick=1, title="", showline=T, tickvals=NULL, showgrid=F, mirror=T),
+         yaxis=list(range=c(0.95,11.5), title="", tickvals=NULL, ticks='none', showline=T, shownumbers=F, visible=T, showgrid=F, mirror=T))
+orca(fig_p, "fig/hist_StillFishSlowerGame.pdf", width=450, height=250)
+
+
 
 
 fig_p <- lapply(unique(Sq$Variable), function(var) {
@@ -281,17 +743,17 @@ fig_p
 orca(fig_p, "fig/hist_quotes.pdf", width=750, height=150)
 
 
-fig_p <- fig %>%
+fig_asn <- fig %>%
   add_trace(data=Sq %>% filter(Variable == "ASPositiveQuote"), text =~paste0("<b>",Participant,"</b>"), textfont=list(size=14), textangle=0,textposition="inside",
             x=~value, y=~y, type='bar', name=~Participant, marker=list(color=I("lightgrey"), line=list(width=2, color=I('white'))),
                 marker = list(line = list(color = "black", width = 1.5))) %>%
   layout(showlegend=F, margin=list(l=1, r=1, t=1, b=1), barmode='stack',
-         xaxis=list(range=c(0.50,7.50), ticks='none', visible=F, dtick=1, title="", showline=F, tickvals=NULL, showgrid=F, mirror=T),
+         xaxis=list(range=c(0.50,7.50), ticks='none', visible=F, dtick=1, title="", showline=T, tickvals=NULL, showgrid=F, mirror=T),
          yaxis=list(range=c(-0.05,8.05), title="", tickvals=NULL, ticks='none', showline=F, shownumbers=F, visible=F, showgrid=F, mirror=T))
-
+fig_p
 orca(fig_p, "fig/hist_ASPositive.pdf", width=160, height=150)
 
-fig_p <- fig %>%
+fig_asp <- fig %>%
   add_trace(data=Sq %>% filter(Variable == "ASNegativeQuote"), text =~paste0("<b>",Participant,"</b>"), textfont=list(size=14), textangle=0,textposition="inside",
             x=~value, y=~y, type='bar', name=~Participant, marker=list(color=I("lightgrey"), line=list(width=2, color=I('white'))),
             marker = list(line = list(color = "black", width = 1.5))) %>%
@@ -301,7 +763,7 @@ fig_p <- fig %>%
 
 orca(fig_p, "fig/hist_ASNegative.pdf", width=160, height=150)
 
-fig_p <- fig %>%
+fig_ion <- fig %>%
   add_trace(data=Sq %>% filter(Variable == "IONegativeQuote"), text =~paste0("<b>",Participant,"</b>"), textfont=list(size=14), textangle=0,textposition="inside",
             x=~value, y=~y, type='bar', name=~Participant, marker=list(color=I("lightgrey"), line=list(width=2, color=I('white'))),
             marker = list(line = list(color = "black", width = 1.5))) %>%
@@ -311,7 +773,7 @@ fig_p <- fig %>%
 
 orca(fig_p, "fig/hist_IONegative.pdf", width=160, height=150)
 
-fig_p <- fig %>%
+fig_iop <- fig %>%
   add_trace(data=Sq %>% filter(Variable == "IOPositiveQuote"), text =~paste0("<b>",Participant,"</b>"), textfont=list(size=14), textangle=0,textposition="inside",
             x=~value, y=~y, type='bar', name=~Participant, marker=list(color=I("lightgrey"), line=list(width=2, color=I('white'))),
             marker = list(line = list(color = "black", width = 1.5))) %>%
@@ -422,6 +884,47 @@ Se_table = Se_table %>% cbind(Se_table_sd) %>%
 paste(colnames(Se_table), collapse=" & ")
 writeLines(paste(Se_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
 
+Se %>% ungroup() %>% select(Participant, `"It irritated me how bad I was at blinking correctly."`) %>%
+  pivot_wider(names_from = Participant, values_from = `"It irritated me how bad I was at blinking correctly."`) %>%
+  ungroup() %>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+  psych::ICC(.) %>% view()
+
+Seicc <- tibble(
+  IrriMe = Se %>% ungroup() %>% select(Participant, `"It irritated me how bad I was at blinking correctly."`) %>%
+    pivot_wider(names_from = Participant, values_from = `"It irritated me how bad I was at blinking correctly."`) %>%
+    ungroup() %>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  FishIrri = Se %>% ungroup() %>% select(Participant, `"Losing the fish is not something that irritates me."`) %>%
+    pivot_wider(names_from = Participant, values_from = `"Losing the fish is not something that irritates me."`) %>%
+    ungroup() %>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  ThinkFish = Se %>% ungroup() %>% select(Participant, `"I was thinking about how I could be better at catching fish."`) %>%
+    pivot_wider(names_from = Participant, values_from = `"I was thinking about how I could be better at catching fish."`) %>%
+    ungroup() %>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  StyleEnjoy = St %>% ungroup() %>% select(Participant, `"I enjoyed the way the game was styled."`) %>%
+    pivot_wider(names_from = Participant, values_from = `"I enjoyed the way the game was styled."`) %>%
+    ungroup() %>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  FeltGood = St %>% ungroup() %>% select(Participant, `"I felt I was good at playing this game."`) %>%
+    pivot_wider(names_from = Participant, values_from = `"I felt I was good at playing this game."`) %>%
+    ungroup() %>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+  EnjoyedGame = St %>% ungroup() %>% select(Participant, `"I enjoyed playing this game very much."`) %>%
+    pivot_wider(names_from = Participant, values_from = `"I enjoyed playing this game very much."`) %>%
+    ungroup()%>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]], 
+  IrriSystem = St %>% ungroup() %>% select(Participant, `"It irritated me when the game did not register my blinks."`) %>%
+    pivot_wider(names_from = Participant, values_from = `"It irritated me when the game did not register my blinks."`) %>%
+    ungroup() %>% mutate(across(everything(), ~ factor(.x, levels=c(1,2,3,4,5,6,7)))) %>%
+    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
+) %>%
+  pivot_longer(cols=everything(), names_to = "Variables", values_to="ICC3")
+
+
+
+
+
 #pivot_wider(names_from = Participant, values_from = value)
 #skimr::skim(Se)
 
@@ -485,18 +988,23 @@ orca(fig_p, "fig/hist_EnjoyedPlaying.pdf", width=450, height=250)
 # Latex Table: Participants
 #############
 cri = tibble(lv_perc = c(0.1, 0.35,0.68,0.82,1.1,1.5,2.2),
+             lv_percf = c(0.1, 2.3,4.5,5.8,7.8,8.8,9.8),
              lv_frust = rev(lv_perc),
+             lv_frustf = rev(lv_percf),
              lv_rate = c(-0.1, 0.35, 0.55, 0.85, 1.1, 1.5, 2.2),
              colors = c("g0","g1", "g2", "g3", "g4","g4","g4"),
+             lv_reel = c(0,3,6,9,12,15,18),
+             lv_unreel = rev(c(0,3,6,9,12,15,18)),
              lv_fish = c(0,2,4,6,10,12,14),
              lv_diff = rev(c(0,2,4,6,10,12,14)),
              lv_lost = c(8,4,2,1,0,-1,-2),
              lv_time = c(115,130,145,160,175,190,205),
-             lv_icc = c(-0.1,0.5,0.73,0.75,0.77,0.90,1.00))
+             lv_icc = c(-0.1,0.5,0.73,0.75,0.77,0.90,1.00),
+             lv_help = c(-0.1,0.15,0.25,0.35,0.45,0.90,1.00))
 
 St_table <- St %>% group_by(Condition) %>% select(Participant, PercNormalized, FrustNormalized, rate_blink, accRecogRate, rate_feedback,
-                                                  fishCaught, fishLost, HowMuchHelpNormalized, LikedHelpNormalized,
-                                                  PacingNormalized, IrritationNormalized, time_total) %>%
+                                                  fishCaught, fishLost, fishReel, fishUnreel, HowMuchHelpNormalized, LikedHelpNormalized,
+                                                  PacingNormalized, IrritationNormalized, time_total, rate_help) %>%
   mutate(
     Condition = ifelse (Condition == "MF", "Mit. Failure", Condition),
     Condition = ifelse (Condition == "NO", "Ref. Condition", Condition),
@@ -513,7 +1021,10 @@ St_table <- St %>% group_by(Condition) %>% select(Participant, PercNormalized, F
     feedback_c = t_color(rate_feedback, cri$lv_rate, cri$colors),
     fish_c = t_color(fishCaught, cri$lv_fish, cri$colors),
     lost_c = t_color(fishLost, cri$lv_lost, cri$colors),
+    reel_c = t_color(fishReel, cri$lv_reel, cri$colors),
+    unreel_c = t_color(fishUnreel, cri$lv_unreel, cri$colors),
     time_c = t_color(time_total, cri$lv_time, cri$colors),
+    help_c = t_color(rate_help, cri$lv_help, cri$colors),
     PercNormalized = format(round(PercNormalized,2), nsmall = 2),
     FrustNormalized = format(round(FrustNormalized,2), nsmall = 2),
     HowMuchHelpNormalized = format(round(HowMuchHelpNormalized,2), nsmall = 2),
@@ -535,9 +1046,11 @@ St_table <- St %>% group_by(Condition) %>% select(Participant, PercNormalized, F
     rate_feedback = paste0("\\cellcolor{", feedback_c, "}", rate_feedback),
     fishCaught = paste0("\\cellcolor{", fish_c, "}", fishCaught),
     fishLost = paste0("\\cellcolor{", lost_c, "}", fishLost),
+    fishReel = paste0("\\cellcolor{", reel_c, "}", fishReel),
+    fishUnreel = paste0("\\cellcolor{", unreel_c, "}", fishUnreel),
     time_total = paste0("\\cellcolor{", time_c, "}", time_total),
     perc_c = NULL, frust_c = NULL, rate_c = NULL, rate_acc_c = NULL, feedback_c = NULL, time_c = NULL,
-    lost_c = NULL, fish_c = NULL, irritation_c = NULL, pacing_c = NULL, likedhelp_c = NULL, muchhelp_c = NULL,
+    lost_c = NULL, fish_c = NULL, irritation_c = NULL, reel_c = NULL, unreel_c = NULL, pacing_c = NULL, likedhelp_c = NULL, muchhelp_c = NULL,
     across(everything(), as.character)) %>% arrange(Condition) %>%
   rename(`Perc. Control` = PercNormalized, `Frustration` = FrustNormalized, `Blink Conv. Rate` = rate_blink,
          `Pos. Feedback` = rate_feedback, `Fish Caught` = fishCaught, `Fish Lost` = fishLost,
@@ -554,40 +1067,6 @@ paste(colnames(St_table), collapse=" & ")
 writeLines(paste(St_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
 
 #############
-# ICC Scores
-#############
-
-Sicc <- tibble(
-  PercNormalized = St %>% ungroup() %>% select(Participant, PercNormalized, Condition) %>%
-    pivot_wider(names_from = Participant, values_from = PercNormalized) %>%
-    ungroup() %>% select(-Condition) %>% 
-    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
-  FrustNormalized = St %>% ungroup() %>% select(Participant, FrustNormalized, Condition) %>%
-    pivot_wider(names_from = Participant, values_from = FrustNormalized) %>%
-    ungroup() %>% select(-Condition) %>% 
-    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
-  HowMuchHelpNormalized = St %>% ungroup() %>% select(Participant, HowMuchHelpNormalized, Condition) %>%
-    pivot_wider(names_from = Participant, values_from = HowMuchHelpNormalized) %>%
-    ungroup() %>% select(-Condition) %>% 
-    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
-  LikedHelpNormalized = St %>% ungroup() %>% select(Participant, LikedHelpNormalized, Condition) %>%
-    pivot_wider(names_from = Participant, values_from = LikedHelpNormalized) %>%
-    ungroup() %>% select(-Condition) %>% 
-    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
-  PacingNormalized = St %>% ungroup() %>% select(Participant, PacingNormalized, Condition) %>%
-    pivot_wider(names_from = Participant, values_from = PacingNormalized) %>%
-    ungroup() %>% select(-Condition) %>% 
-    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]],
-  IrritationNormalized = St %>% ungroup() %>% select(Participant, IrritationNormalized, Condition) %>%
-    pivot_wider(names_from = Participant, values_from = IrritationNormalized) %>%
-    ungroup() %>% select(-Condition) %>% 
-    psych::ICC(.) %>% unlist(.) %>% .[["results.ICC3"]]
-) %>% 
-  select(`Perc. Control` = PercNormalized, `Frustration` = FrustNormalized, `How Much Help` = HowMuchHelpNormalized,
-         `Liked Help` = LikedHelpNormalized, `Perc. Pacing` = PacingNormalized, `Irritation` = IrritationNormalized) %>%
-  pivot_longer(cols=everything(), names_to = "Variable", values_to="ICC3")
-
-#############
 # Latex Table: Group Level Features
 #############
 
@@ -598,81 +1077,113 @@ Sc_table <- Sc %>% ungroup() %>% group_by(Condition) %>%
     Condition = ifelse (Condition == "AS", "Aug. Success", Condition),
     Condition = ifelse (Condition == "IO", "Input Override", Condition),
     perc_c = t_color(PercNormalized, cri$lv_perc, cri$colors),
+    percf_c = t_color(Perc.f, cri$lv_percf, cri$colors),
     frust_c = t_color(FrustNormalized, cri$lv_frust, cri$colors),
+    frustf_c = t_color(Frust.f, cri$lv_frustf, cri$colors),
     rate_c = t_color(rate_blink, cri$lv_rate, cri$colors),
     feedback_c = t_color(rate_feedback, cri$lv_rate, cri$colors),
     rate_acc_c = t_color(blink_recog, cri$lv_rate, cri$colors),
     fish_c = t_color(fishCaught, cri$lv_fish, cri$colors),
     lost_c = t_color(fishLost, cri$lv_lost, cri$colors),
+    reel_c = t_color(fishReel, cri$lv_reel, cri$colors),
+    unreel_c = t_color(fishUnreel, cri$lv_unreel, cri$colors),
+    muchhelpf_c = t_color(HowMuchHelp.f, cri$lv_percf, cri$colors),
+    likedhelpf_c = t_color(LikedHelp.f, cri$lv_percf, cri$colors),
+    pacingf_c = t_color(Pacing.f, cri$lv_percf, cri$colors),
+    irritationf_c = t_color(Irritation.f, cri$lv_frustf, cri$colors),
     muchhelp_c = t_color(HowMuchHelpNormalized, cri$lv_perc, cri$colors),
     likedhelp_c = t_color(LikedHelpNormalized, cri$lv_perc, cri$colors),
     pacing_c = t_color(PacingNormalized, cri$lv_perc, cri$colors),
-    irritation_c = t_color(IrritationNormalized, cri$lv_perc, cri$colors),
+    irritation_c = t_color(IrritationNormalized, cri$lv_frust, cri$colors),
     hardest_c = t_color(Hardest, cri$lv_diff, cri$colors),
     easiest_c = t_color(Easiest, cri$lv_diff, cri$colors),
     time_c = t_color(time_total, cri$lv_time, cri$colors),
+    help_c = t_color(rate_help, cri$lv_help, cri$colors),
     HowMuchHelpNormalized = format(round(HowMuchHelpNormalized,2), nsmall = 2),
+    HowMuchHelp.f = format(round(HowMuchHelp.f,2), nsmall = 2),
     LikedHelpNormalized = format(round(LikedHelpNormalized,2), nsmall = 2),
+    LikedHelp.f = format(round(LikedHelp.f,2), nsmall = 2),
     PacingNormalized = format(round(PacingNormalized,2), nsmall = 2),
+    Pacing.f = format(round(Pacing.f,2), nsmall = 2),
     IrritationNormalized = format(round(IrritationNormalized,2), nsmall = 2),
+    Irritation.f = format(round(Irritation.f,2), nsmall = 2),
     PercNormalized = format(round(PercNormalized,2), nsmall = 2),
+    Perc.f = format(round(Perc.f,2), nsmall = 2),
     FrustNormalized = format(round(FrustNormalized,2), nsmall = 2),
-    blink_recog = format(round(blink_recog,2), nsmall = 2),
-    time_total = format(round(time_total,2), nsmall = 2),
+    Frust.f = format(round(Frust.f,2), nsmall = 2),
+    fishCaught = format(round(fishCaught,2), nsmall = 2),
+    fishLost = format(round(fishLost,2), nsmall = 2),
+    fishReel = format(round(fishReel,2), nsmall = 2),
+    fishUnreel = format(round(fishUnreel,2), nsmall = 2),
+    #blink_recog = format(round(blink_recog,2), nsmall = 2),
+    time_total = format(round(time_total,0), nsmall = 0),
     HowMuchHelpNormalized_SD = format(round(HowMuchHelpNormalized_SD,2), nsmall = 2),
+    HowMuchHelp.f_SD = format(round(HowMuchHelp.f_SD,2), nsmall = 2),
     LikedHelpNormalized_SD = format(round(LikedHelpNormalized_SD,2), nsmall = 2),
+    LikedHelp.f_SD = format(round(LikedHelp.f_SD,2), nsmall = 2),
     PacingNormalized_SD = format(round(PacingNormalized_SD,2), nsmall = 2),
+    Pacing.f_SD = format(round(Pacing.f_SD,2), nsmall = 2),
     IrritationNormalized_SD = format(round(IrritationNormalized_SD,2), nsmall = 2),
+    Irritation.f_SD = format(round(Irritation.f_SD,2), nsmall = 2),
     PercNormalized_SD = format(round(PercNormalized_SD,2), nsmall = 2),
+    Perc.f_SD = format(round(Perc.f_SD,2), nsmall = 2),
+    Frust.f_SD = format(round(Frust.f_SD,2), nsmall = 2),
     FrustNormalized_SD = format(round(FrustNormalized_SD,2), nsmall = 2),
     rate_feedback_SD = format(round(rate_feedback_SD,2), nsmall = 2),
     rate_blink_SD = format(round(rate_blink_SD,2), nsmall = 2),
+    rate_help_SD = format(round(rate_help_SD,2), nsmall = 2),
     blink_recog_SD = format(round(blink_recog_SD,2), nsmall = 2),
     fishCaught_SD = format(round(fishCaught_SD,2), nsmall = 2),
     fishLost_SD = format(round(fishLost_SD,2), nsmall = 2),
-    time_total_SD = format(round(time_total_SD,2), nsmall = 2),
+    fishReel_SD = format(round(fishReel_SD,2), nsmall = 2),
+    fishUnreel_SD = format(round(fishUnreel_SD,2), nsmall = 2),
+    time_total_SD = format(round(time_total_SD,0), nsmall = 0),
     rate_blink = paste0(format(round(rate_blink * 100,0), nsmall = 0),"\\%"),
+    blink_recog = paste0(format(round(blink_recog * 100,0), nsmall = 0),"\\%"),
+    rate_help = paste0(format(round(rate_help * 100,0), nsmall = 0),"\\%"),
+    rate_help = paste0("\\cellcolor{", help_c, "}", rate_help, " (", rate_help_SD,")"),
     rate_feedback = paste0(format(round(rate_feedback * 100, 0), nsmall = 0), "\\%"),
     HowMuchHelpNormalized = paste0("\\cellcolor{", muchhelp_c, "}", HowMuchHelpNormalized, " (", HowMuchHelpNormalized_SD, ")"),
+    HowMuchHelp.f = paste0("\\cellcolor{", muchhelpf_c, "}", HowMuchHelp.f, " (", HowMuchHelp.f_SD, ")"),
     LikedHelpNormalized = paste0("\\cellcolor{", likedhelp_c, "}", LikedHelpNormalized, " (", LikedHelpNormalized_SD, ")"),
+    LikedHelp.f = paste0("\\cellcolor{", likedhelpf_c, "}", LikedHelp.f, " (", LikedHelp.f_SD, ")"),
     PacingNormalized = paste0("\\cellcolor{", pacing_c, "}", PacingNormalized, " (", PacingNormalized_SD, ")"),
+    Pacing.f = paste0("\\cellcolor{", pacingf_c, "}", Pacing.f, " (", Pacing.f_SD, ")"),
     IrritationNormalized = paste0("\\cellcolor{", irritation_c, "}", IrritationNormalized, " (", IrritationNormalized_SD, ")"),
+    Irritation.f = paste0("\\cellcolor{", irritationf_c, "}", Irritation.f, " (", Irritation.f_SD, ")"),
     PercNormalized = paste0("\\cellcolor{", perc_c, "}", PercNormalized, " (", PercNormalized_SD, ")"),
     FrustNormalized = paste0("\\cellcolor{", frust_c, "}", FrustNormalized, " (", FrustNormalized_SD, ")"),
+    Perc.f = paste0("\\cellcolor{", percf_c, "}", Perc.f, " (", Perc.f_SD, ")"),
+    Frust.f = paste0("\\cellcolor{", frustf_c, "}", Frust.f, " (", Frust.f_SD, ")"),
     rate_blink = paste0("\\cellcolor{", rate_c, "}", rate_blink, " (", rate_blink_SD,")"),
     rate_feedback = paste0("\\cellcolor{", feedback_c, "}", rate_feedback,  " (", rate_feedback_SD, ")"),
     fishCaught = paste0("\\cellcolor{", fish_c, "}", fishCaught, " (", fishCaught_SD, ")"),
     fishLost = paste0("\\cellcolor{", lost_c, "}", fishLost, " (", fishLost_SD, ")"),
+    fishReel = paste0("\\cellcolor{", reel_c, "}", fishReel, " (", fishReel_SD, ")"),
+    fishUnreel = paste0("\\cellcolor{", unreel_c, "}", fishUnreel, " (", fishUnreel_SD, ")"),
     blink_recog = paste0("\\cellcolor{", rate_acc_c, "}", blink_recog, " (", blink_recog_SD, ")"),
     Hardest = paste0("\\cellcolor{", hardest_c, "}", Hardest),
     Easiest = paste0("\\cellcolor{", easiest_c, "}", Easiest),
-    time_total = paste0("\\cellcolor{", time_c, "}", time_total, " (", time_total_SD, ")"),
+    time_total = paste0("\\cellcolor{", time_c, "}", time_total, "s (", time_total_SD, "s)"),
     perc_c = NULL, frust_c = NULL, rate_c = NULL, feedback_c = NULL, easiest_c = NULL, hardest_c = NULL, time_c = NULL,
     lost_c = NULL, fish_c = NULL, rate_acc_c = NULL, irritation_c = NULL, pacing_c = NULL, likedhelp_c = NULL, muchhelp_c = NULL,
     across(everything(), as.character)) %>% arrange(Condition) %>%
-  select(`Perc. Control` = PercNormalized, `Frustration` = FrustNormalized, `How Much Help` = HowMuchHelpNormalized,
-         `Liked Help` = LikedHelpNormalized, `Perc. Pacing` = PacingNormalized, `Irritation` = IrritationNormalized,
-         Hardest, Easiest, `Blink Conv. Rate` = rate_blink,
-         `Blink Recognition` = blink_recog,  `Pos. Feedback` = rate_feedback, `Fish Caught` = fishCaught, `Fish Lost` = fishLost,
-         Duration = time_total) %>%
+  select(`Perc. Control` = Perc.f, `Frustration` = Frust.f, `Help Quantity` = HowMuchHelp.f,
+         `Help Appeal` = LikedHelp.f, `Pacing` = Pacing.f, `Irritation` = Irritation.f,
+          Hardest, Easiest, `Blink Recognition` = blink_recog, `Blink Conv. Rate` = rate_blink,
+         `Pos. Feedback` = rate_feedback, `Help Rate` = rate_help, `Fish Caught` = fishCaught, `Fish Lost` = fishLost,
+         `Fish Reel` = fishReel, `Fish Unreel` = fishUnreel, Duration = time_total) %>%
   select(-c(ends_with("_SD"))) %>%
-  pivot_longer(cols=-c(Condition), names_to = "Variable") %>%
+  pivot_longer(cols=-c(Condition), names_to = "Variables") %>%
   pivot_wider(names_from = Condition, values_from = value)
 
 # Add ICC Scores
 Sc_table <- Sc_table %>% left_join(Sicc) %>% 
-  mutate(ICC3 = ifelse(is.na(ICC3),0,ICC3),
-         ICC3_c = t_color(ICC3, cri$lv_ICC, cri$colors))
-         #ICC3 = ifelse(is.na(ICC3),"-",ICC3))
+  mutate(ICC3 = ifelse(is.na(ICC3),"-",format(round(ICC3,2), nsmall = 2)))
 
-
-#,
-#ICC3 = format(round(ICC3,2), nsmall = 2)
 
 paste(colnames(Sc_table), collapse=" & ")
 writeLines(paste(Sc_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "), "table.txt")
-
-
   
 
 
@@ -698,28 +1209,75 @@ test <- psych::ICC(D_icc)
 # Cumulative Link Mixed Models: All
 #############
 
-
-clmms = list(predictors = c("Frust.f", "Perc.f"),
-             #random = c("bci_experience.f","Fatigue.f"),
-             fixed = c("rate_feedback", "Condition.f", "Gender.f", "Order.f", "HowMuchHelp.f","LikedHelp.f","Pacing.f",
-                       "pam_rate", "fishCaught","fishReel","fishUnreel", "fishLost"),
+### H1/2: No variables significantly predicted/affected participants' perceived control and frustration.
+clmms = list(predictors = c("Perc.f","Frust.f"),
+             random = c("bci_experience.f","Fatigue.f","Gender.f"),
+             fixed = c("rate_feedback","blink_conv_rate", "Condition.f", "Gender.f", "Order.f",
+                       "pam_rate", "fishCaught","fishReel","fishUnreel", "fishLost","time_total"),
              null = c("Participant.f"),
-             threshold = 0.05,
+             threshold = 0.10, # increased to 0.1 to show models which were close to significant.
              df = St)
 
 table = g_clmm_table(clmms)
 
-#H1/2: No variables significantly predicted/affected participants' perceived control and frustration.
+glme_table <- table %>% 
+  mutate(p = `$\\chi^2$`,
+         `Random Intercept` = "Participant",
+         `$\\chi^2$` = format(round(`$\\chi^2$`,3), nsmall = 3),
+         `$\\chi^2$` = ifelse(`$\\chi^2$` == "0.000", "$<$0.001", `$\\chi^2$`),
+         `$\\chi^2$` = ifelse(p < 0.05, paste0(`$\\chi^2$`,"*")),
+         across(everything(), ~ str_replace_all(.x, c("Order.f" = "Condition Order",
+                                                      "Frust.f" = "Frustration",
+                                                      "Perc.f" = "Perc. Control",
+                                                      "Participant.f" = "Participant",
+                                                      "LikedHelp.f" = "Help Appeal")))
+  ) %>%
+  select(Predicted, `Fixed Effect`, AIC, ML, LR, `$\\chi^2$`)
+message(paste(colnames(glme_table), collapse=" & "))
+message(paste(glme_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "))
+
+### H3/4: Condition significantly predicted HowMuchHelp and LikedHelp
+
+#St = St %>% filter(Condition %in% c("AS","IO","MF"))
 
 clmms = list(predictors = c("HowMuchHelp.f", "LikedHelp.f"),
-             #random = c("bci_experience.f","Fatigue.f"),
-             fixed = c("rate_feedback", "Condition.f", "Gender.f", "Order.f", "Pacing.f",
-                       "pam_rate", "fishCaught","fishReel","fishUnreel", "fishLost"),
+             random = c("bci_experience.f","Fatigue.f","Gender.f"),
+             fixed = c("rate_feedback","blink_conv_rate", "Condition.f", "Order.f", "Pacing.f",
+                       "pam_rate", "fishCaught","fishReel","fishUnreel", "fishLost","time_total"),
              null = c("Participant.f"),
              threshold = 0.05,
-             df = St)
+             df = St %>% filter(Condition %in% c("AS","IO","MF")))
 table = g_clmm_table(clmms)
-#St$Condition.f = factor(St$Condition.f, levels=c("MF","IO","AS","NO"))
+
+glme_table <- table %>% 
+  mutate(p = `$\\chi^2$`,
+         `Random Intercept` = "Participant",
+         `$\\chi^2$` = format(round(`$\\chi^2$`,3), nsmall = 3),
+         `$\\chi^2$` = ifelse(`$\\chi^2$` == "0.000", "$<$0.001", `$\\chi^2$`),
+         `$\\chi^2$` = ifelse(p < 0.05, paste0(`$\\chi^2$`,"*")),
+         across(everything(), ~ str_replace_all(.x, c("Order.f" = "Condition Order",
+                                                      "HowMuchHelp.f" = "Help Quantity",
+                                                      "LikedHelp.f" = "Help Appeal",
+                                                      "Pacing.f" = "Pacing",
+                                                      "Condition.f" = "Condition",
+                                                      "pam_rate" = "PAM Rate",
+                                                      "blink_conv_rate" = "Blink Conv. Rate",
+                                                      "fishCaught" = "Fish Caught",
+                                                      "fishReel" = "Fish Reel",
+                                                      "fishUnreel" = "Fish Unreel",
+                                                      "fishLost" = "Fish Lost",
+                                                      "Irritation.f" = "Irritation",
+                                                      "Frust.f" = "Frustration",
+                                                      "Perc.f" = "Perc. Control",
+                                                      "Participant.f" = "Participant",
+                                                      "LikedHelp.f" = "Help Appeal",
+                                                      "rate_feedback" = "Pos. Feedback")))
+  ) %>%
+  select(Predicted, `Fixed Effect`, AIC, ML, LR, `$\\chi^2$`)
+message(paste(colnames(glme_table), collapse=" & "))
+message(paste(glme_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "))
+
+St$Condition.f = factor(St$Condition.f, levels=c("MF","IO","AS","NO"))
 model.null = clm(HowMuchHelp.f ~ 1 + (1|Participant), data=St %>% filter(Condition %in% c("AS","IO","MF")))
 
 model.condition = clmm(HowMuchHelp.f ~ 1 + (1|Participant) + Condition.f , data=St %>% filter(Condition %in% c("AS","IO","MF")))
@@ -729,17 +1287,61 @@ anova(model.condition, model.null)
 modelcond.summary = summary(model.condition)
 modelcond.summary
 
-#St$Condition.f = factor(St$Condition.f, levels=c("AS","MF","IO","NO"))
+St$Condition.f = factor(St$Condition.f, levels=c("IO","MF","AS","NO"))
 
 model.null = clm(LikedHelp.f ~ 1 + (1|Participant), data=St %>% filter(Condition %in% c("AS","IO","MF")))
 
-model.condition = clmm(LikedHelp.f ~ 1 + (1|Participant) + Condition.f , data=St %>% filter(Condition %in% c("AS","IO","MF")))
+model.condition = clmm(LikedHelp.f ~ 1 + (1|Participant) + Condition.f, data=St %>% filter(Condition %in% c("AS","IO","MF")))
 
 anova(model.condition, model.null)
 
 modelcond.summary = summary(model.condition)
 modelcond.summary
-#H3/4: Quantity of Help comes from 
+
+fixedtable = as.data.frame(modelfrust.summary$coefficients) %>% 
+  rownames_to_column("Fixed Effect") %>%
+  filter(`Fixed Effect` %in% c("pam_rate", "fishLost")) %>%
+  mutate(Predicted = "Frustration") 
+
+model.condition = clmm(Perc.f ~ 1 + (1|Participant) + rate_feedback + Condition, data=St %>% filter(Condition %in% c("AS","IO","MF")))
+car::vif(model.condition)
+
+
+
+#H5/6: Pacing/irritation
+
+clmms = list(predictors = c("Pacing.f", "Irritation.f"),
+             #random = c("bci_experience.f","Fatigue.f"),
+             fixed = c("rate_feedback", "Condition.f", "Gender.f", "Order.f",
+                       "pam_rate", "fishCaught","fishReel","fishUnreel", "fishLost"),
+             null = c("Participant.f"),
+             threshold = 0.3,
+             df = St)
+table = g_clmm_table(clmms)
+
+glme_table <- table %>% 
+  mutate(p = `$\\chi^2$`,
+         `Random Intercept` = "Participant",
+         `$\\chi^2$` = format(round(`$\\chi^2$`,3), nsmall = 3),
+         `$\\chi^2$` = ifelse(`$\\chi^2$` == "0.000", "$<$0.001", `$\\chi^2$`),
+         `$\\chi^2$` = ifelse(p < 0.05, paste0(`$\\chi^2$`,"*"),`$\\chi^2$`),
+         across(everything(), ~ str_replace_all(.x, c("Order.f" = "Condition Order",
+                                                      "HowMuchHelp.f" = "Help Quantity",
+                                                      "LikedHelp.f" = "Help Appeal",
+                                                      "Pacing.f" = "Pacing",
+                                                      "Irritation.f" = "Irritation",
+                                                      "Frust.f" = "Frustration",
+                                                      "Perc.f" = "Perc. Control",
+                                                      "Participant.f" = "Participant")))
+  ) %>%
+  select(Predicted, `Fixed Effect`, AIC, ML, LR, `$\\chi^2$`)
+message(paste(colnames(glme_table), collapse=" & "))
+message(paste(glme_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "))
+
+
+
+
+
 
 #############
 # Linear Mixed Models
@@ -782,8 +1384,133 @@ message(paste(colnames(lme_table), collapse=" & "))
 message(paste(lme_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "))
 
 #############
+# Violin Plots of Main Measurements
+#############
+#fig_c <- fig %>%
+#  add_trace(data=St, x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input","Ref.")), 
+#            y=~n_clip(jitter(PercNormalized,amount=.02)),
+#            scalemode='width', points='all', pointpos=0,name='C', jitter=.65, meanline=list(visible=T,width=4),
+#            symbol=I('o'),marker=list(size=10,line=list(width=1.5)),
+#            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.09, color=I('darkgray')) %>%
+#  add_trace(data=St %>% arrange(Participant,Condition),x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input","Ref.")),
+#            y=~n_clip(jitter(PercNormalized,amount=.02)), type='scatter',mode='lines') %>%
+#  layout(margin=list(l=0,r=0,t=55,b=0), title=list(font=list(size=15),xanchor="center",xref="paper",
+#                                                   text="“I felt I was in control of the \n fisherman reeling in the fish.”"), showlegend=F,
+#         xaxis=list(range=c(-0.45,3.55), title=" ",tickfont=list(size=15)),
+#         yaxis=list(range=c(-0.02,1.02), title=" ", dtick=0.167, tickformat = ".2", tickfont=list(size=15), zeroline=F))
+#fig_c
+#orca(fig_c, "fig/condition_percNormalized_violin.pdf", width=275, height=325)
+
+fig_c <- fig %>%
+  add_trace(data=St, x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input","Ref.")), 
+            y=~n_clip(jitter(PercNormalized,amount=.02)),
+            scalemode='width', points='all', pointpos=0,name='C', jitter=.65, meanline=list(visible=T,width=4),
+            symbol=I('o'),marker=list(size=10,line=list(width=1.5)),
+            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.09, color=I('darkgray')) %>%
+  layout(margin=list(l=0,r=0,t=55,b=0),title=list(font=list(size=15),xanchor="center",xref="paper",
+                                                  text="“I felt I was in control of the \n fisherman reeling in the fish.”"), showlegend=F,
+         xaxis=list(range=c(-0.45,3.55), title=" ", zeroline=F, tickfont=list(size=15)),
+         yaxis=list(range=c(-0.02,1.02), title=" ", zeroline=F, dtick=0.167, tickformat = ".2", tickfont=list(size=15), showticklabels=T))
+fig_c
+orca(fig_c, "fig/condition_percNormalized_violin.pdf", width=285, height=325)
+
+
+
+fig %>% add_trace(data=St %>% arrange(Participant,Condition),x=~factor(ConditionLabel, levels=c("Aug.\n Success","Overr.\n Input","Mit.\n Failure","Ref.")),
+                    y=~n_clip(jitter(PercNormalized,amount=.02)), name=~Participant, hovertext=~Participant, type='scatter',mode='markers+lines')
+
+fig_c <- fig %>%
+  add_trace(data=St, x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input","Ref.")), 
+            y=~n_clip(jitter(FrustNormalized,amount=.02)),
+            scalemode='width', points='all', pointpos=0,name='C', jitter=.65, meanline=list(visible=T,width=4),
+            symbol=I('o'),marker=list(size=10,line=list(width=1.5)),
+            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.09, color=I('darkgray')) %>%
+  layout(margin=list(l=0,r=0,t=55,b=0),title=list(font=list(size=15),xanchor="center",xref="paper",
+                                                  text="“How much frustration did you \n feel in this condition?”"), showlegend=F,
+         xaxis=list(range=c(-0.45,3.55), title=" ", zeroline=F, tickfont=list(size=15)),
+         yaxis=list(range=c(-0.02,1.02), title=" ", zeroline=F, dtick=0.167, tickformat = ".2", tickfont=list(size=15), showticklabels=T))
+fig_c
+orca(fig_c, "fig/condition_frustNormalized_violin.pdf", width=285, height=325)
+
+fig_c <- fig %>%
+  add_trace(data=St, x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input")),
+            y=~n_clip(jitter(HowMuchHelpNormalized,amount=.02)),
+            scalemode='width', points='all', pointpos=0,name='C', jitter=.65, meanline=list(visible=T,width=4,color=I('black')),
+            symbol=I('o'),marker=list(size=10,line=list(width=1.5)),
+            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.09, color=I('darkgray')) %>%
+  layout(margin=list(l=0,r=0,t=55,b=0), title=list(font=list(size=15),xanchor="center",xref="paper",
+                                                   text="“How much did you feel \n the game helped you?”"),showlegend=F,
+         xaxis=list(range=c(-0.45,2.55), title=" ", tickfont=list(size=15)),
+         yaxis=list(range=c(-0.02,1.02), title=" ", dtick=0.167, tickformat = ".2", tickfont=list(size=15), zeroline=F, showticklabels=F))
+fig_c
+orca(fig_c, "fig/condition_howMuchHelp_violin.pdf", width=275, height=325)
+
+fig_c <- fig %>%
+  add_trace(data=St, x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input")),
+            y=~n_clip(jitter(LikedHelpNormalized,amount=.02)),
+            scalemode='width', points='all', pointpos=0,name='C', jitter=.65, meanline=list(visible=T,width=4),
+            symbol=I('o'),marker=list(size=10,line=list(width=1.5)),
+            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.09, color=I('darkgray')) %>%
+  layout(margin=list(l=0,r=0,t=55,b=0), title=list(font=list(size=15),xanchor="center",xref="paper",
+                                                   text="\n“I liked how the game helped me.”"), showlegend=F,
+         xaxis=list(range=c(-0.45,2.55), title=" ", tickfont=list(size=15)),
+         yaxis=list(range=c(-0.02,1.02), title=" ", dtick=0.167, tickformat = ".2", tickfont=list(size=15), zeroline=F, showticklabels=FALSE))
+fig_c
+orca(fig_c, "fig/condition_LikedHelp_violin.pdf", width=275, height=325)
+
+fig_c <- fig %>%
+  add_trace(data=St, x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input","Ref.")),
+            y=~n_clip(jitter(PacingNormalized,amount=.02)),
+            scalemode='width', points='all', pointpos=0,name='C', jitter=.65, meanline=list(visible=T,width=4),
+            symbol=I('o'),marker=list(size=10,line=list(width=1.5)),
+            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.09, color=I('darkgray')) %>%
+  layout(margin=list(l=0,r=0,t=55,b=0), title=list(font=list(size=15),xanchor="center",xref="paper",
+                                                   text="“I felt the pacing of the game was”\n (slow/fast)"), showlegend=F,
+         xaxis=list(range=c(-0.45,3.55), title=" ",tickfont=list(size=15)),
+         yaxis=list(range=c(-0.02,1.02), title=" ", dtick=0.167, tickformat = ".2", tickfont=list(size=15), zeroline=F,showticklabels=F))
+fig_c
+orca(fig_c, "fig/condition_pacingNormalized_violin.pdf", width=275, height=325)
+
+fig_c <- fig %>%
+  add_trace(data=St, x=~factor(ConditionLabel, levels=c("Aug.\n Success","Mit.\n Failure","Overr.\n Input","Ref.")), y=~n_clip(jitter(IrritationNormalized,amount=.02)),
+            scalemode='width', points='all', pointpos=0,name='C', jitter=.45, meanline=list(visible=T,width=4),
+            symbol=I('o'),marker=list(size=10,line=list(width=1.5)),
+            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.09, color=I('darkgray')) %>%
+  layout(margin=list(l=0,r=0,t=55,b=0), title=list(font=list(size=15),xanchor="center",xref="paper",
+                                                   text="“How irritated did you feel\n in this condition?”"), showlegend=F,
+         xaxis=list(range=c(-0.45,3.55), title=" ",tickfont=list(size=15)),
+         yaxis=list(range=c(-0.02,1.02), title=" ", dtick=0.167, tickformat = ".2", tickfont=list(size=15), zeroline=F,showticklabels=FALSE))
+fig_c
+orca(fig_c, "fig/condition_irritationNormalized_violin.pdf", width=275, height=325)
+
+#############
 # Means and ratings by participant
 #############
+
+# Fish Reel
+fig_c <- lapply(unique(St$Condition), function(cond) {
+  fig %>%
+    add_trace(data=St %>% filter(Condition == cond), x=~jitter(fishReel,0.45), y=~jitter(LikedHelpNormalized,0.15),
+              type='scatter', mode='markers',symbol=I('o'), marker=list(size=8)) %>%
+    layout(annotations=list(showarrow=F,x=1.45,y=1.03,text=paste0(cond)),
+           xaxis=list(range=c(-0.1,30.1), title="Control"),
+           yaxis=list(range=c(-0.1,1.1), title="Perc.Control"))
+}) %>% subplot(., nrows=1) %>% layout(title="How much frustration did you feel in this condition?", showlegend=F, yaxis=list(title="Frustration Rating"), xaxis=list(title="Participant"))
+fig_c
+orca(fig_c, "fig/participant_frust.pdf", width=1150, height=350)
+
+
+# Condition Order
+fig_c <- lapply(unique(St$Condition), function(cond) {
+  fig %>%
+    add_trace(data=St %>% filter(Condition == cond), x=~jitter(Order,0.45), y=~jitter(LikedHelpNormalized,0.15),
+              type='scatter', mode='markers',symbol=I('o'), marker=list(size=8)) %>%
+    layout(annotations=list(showarrow=F,x=1.45,y=1.03,text=paste0(cond)),
+           xaxis=list(range=c(-0.1,5.1), title="Control"),
+           yaxis=list(range=c(-0.1,1.1), title="Perc.Control"))
+}) %>% subplot(., nrows=1) %>% layout(title="How much frustration did you feel in this condition?", showlegend=F, yaxis=list(title="Frustration Rating"), xaxis=list(title="Participant"))
+fig_c
+orca(fig_c, "fig/participant_frust.pdf", width=1150, height=350)
 
 #Frustration
 fig_c <- lapply(unique(St$Condition), function(cond) {
@@ -853,7 +1580,7 @@ fig_c <- lapply(unique(St$Condition), function(cond) {
     layout(annotations=list(showarrow=F,x=1.45,y=1.03,text=paste0(cond)),
            xaxis=list(range=c(-0.1,11), title="Control"),
            yaxis=list(range=c(-0.1,1.1), title="Perc.Control"))
-}) %>% subplot(., nrows=1) %>% layout(showlegend=F, title="“How much did you feel the game helped you?”", yaxis=list(title="How Much Help Rating"), xaxis=list(title="Participant"))
+}) %>% subplot(., nrows=1) %>% layout(showlegend=F, title="“How much did you feel the game helped you?”", yaxis=list(title="Help Quantity Rating"), xaxis=list(title="Participant"))
 fig_c
 orca(fig_c, "fig/participant_howmuchhelp.pdf", width=1150, height=350)
 
@@ -868,13 +1595,87 @@ fig_c <- lapply(unique(St$Condition), function(cond) {
     layout(annotations=list(showarrow=F,x=1.45,y=1.03,text=paste0(cond)),
            xaxis=list(range=c(-0.1,11), title="Control"),
            yaxis=list(range=c(-0.1,1.1), title="Perc.Control"))
-}) %>% subplot(., nrows=1) %>% layout(showlegend=F, title="“I liked how the game helped me.” ", yaxis=list(title="Liked Help Rating"), xaxis=list(title="Participant"))
+}) %>% subplot(., nrows=1) %>% layout(showlegend=F, title="“I liked how the game helped me.” ", yaxis=list(title="Help Appeal Rating"), xaxis=list(title="Participant"))
 fig_c
 orca(fig_c, "fig/participant_likedhelp.pdf", width=1150, height=350)
+
+
+fig1 <- fig %>%
+  add_trace(x=factor(St$Condition, levels=c("50C0F", "50C15F","50C30F","50C50F")), y=n_clip(jitter(St$PercNormalized,amount=.02)),
+            scalemode='width', points='all', pointpos=0,name='C', jitter=.3,
+            scalegroup='C', type="violin", spanmode="soft", width=1, fillcolor = "rgba(0, 0, 0, 0)", bandwidth=.08, color=I('darkgray')) %>%
+  add_trace(data=Lines, x=~Condition, y=~perc_mean, type='scatter',mode='lines+markers', color=I('black'),marker=list(size=10),
+            error_y= list(array=~perc_ci)) %>%
+  #add_trace(data=PercPureCurve, x=~x, y=~y, type='scatter', line=list(dash='dot'), symbol=I('square-x-open'), mode='lines+markers', color=I('black'),marker=list(size=10),
+  #          error_y= list(array=~perc_error)) %>%
+  #add_trace(data=PercLines[["PercFabCurve, x=~x, y=~y, type='scatter', mode='lines+markers', color=I('black'),marker=list(size=10),
+  #          error_y= list(array=~perc_error)) %>%
+  layout(showlegend=F, yaxis = list(range=c(-0.02,1.1), title="Perceived Control", violinmode = 'overlay', violingap = 0, zeroline=F),
+         xaxis=list(title="Fabrication Rate (%)", tickmode='array', tickvals=c(0,1,2,3), ticktext=c('+0%', '+15%', '+30%', '+50%')))
+fig1
+orca(fig1, "fig/study2-level-of-control-perceived.pdf", width=350, height=350)
 
 #############
 # Conditions themselves
 #############
+
+# Comparison of variables that we test in terms of variation between conditions.
+fig_c <- fig %>%
+  add_trace(name="fishCaught", data=St, x=~Condition, y=~jitter(fishCaught_n,amount=.035),
+            hovertext=~fishCaught, symbol=I('o'),
+            type='scatter', mode='marker', marker=list(size=6),color=I('rgba(180,180,180,1.0)')) %>%
+  add_trace(name="fishCaught", data=tibble(y=c(mean(St$fishCaught_n[St$Condition=="AS"]),
+                            mean(St$fishCaught_n[St$Condition=="IO"]),
+                            mean(St$fishCaught_n[St$Condition=="MF"]),
+                            mean(St$fishCaught_n[St$Condition=="NO"])), 
+                        x=as.factor(c("AS","IO","MF","NO"))),
+            x=~x, y=~y, type='scatter', mode='lines', color=I('rgba(160,160,160,1.0)')) %>%
+  add_trace(name="fishReel", data=St, x=~Condition, y=~jitter(fishReel_n,amount=.035),
+            hovertext=~fishReel_a, symbol=I('o'),
+            type='scatter', mode='marker', marker=list(size=6),color=I('rgba(195,195,195,1.0)')) %>%
+  add_trace(name="fishReel", data=tibble(y=c(mean(St$fishReel_n[St$Condition=="AS"]),
+                                               mean(St$fishReel_n[St$Condition=="IO"]),
+                                               mean(St$fishReel_n[St$Condition=="MF"]),
+                                               mean(St$fishReel_n[St$Condition=="NO"])), 
+                                           x=as.factor(c("AS","IO","MF","NO"))),
+            x=~x, y=~y, type='scatter', mode='lines', color=I('rgba(195,195,195,1.0)')) %>%
+  add_trace(name="fishUnreel", data=St, x=~Condition, y=~jitter(fishUnreel_n,amount=.035),
+            hovertext=~fishUnreel, symbol=I('o'),
+            type='scatter', mode='marker', marker=list(size=6),color=I('rgba(125,125,125,1.0)')) %>%
+  add_trace(name="fishUnreel", data=tibble(y=c(mean(St$fishUnreel_n[St$Condition=="AS"]),
+                                             mean(St$fishUnreel_n[St$Condition=="IO"]),
+                                             mean(St$fishUnreel_n[St$Condition=="MF"]),
+                                             mean(St$fishUnreel_n[St$Condition=="NO"])), 
+                                         x=as.factor(c("AS","IO","MF","NO"))),
+            x=~x, y=~y, type='scatter', mode='lines', color=I('rgba(125,125,125,1.0)')) %>%
+  add_trace(name="Duration", data=St, x=~Condition, y=~jitter(time_total_n,amount=.035),
+            hovertext=~time_total, symbol=I('o'),
+            type='scatter', mode='marker', marker=list(size=6),color=I('rgba(110,110,110,1.0)')) %>%
+  add_trace(name="Duration", data=tibble(y=c(mean(St$time_total_n[St$Condition=="AS"]),
+                                               mean(St$time_total_n[St$Condition=="IO"]),
+                                               mean(St$time_total_n[St$Condition=="MF"]),
+                                               mean(St$time_total_n[St$Condition=="NO"])), 
+                                           x=as.factor(c("AS","IO","MF","NO"))),
+            x=~x, y=~y, type='scatter', mode='lines', color=I('rgba(110,110,110,1.0)')) %>%
+  add_trace(name="text annotations",
+            data=tibble(y=c(mean(St$fishCaught_n[St$Condition=="NO"]+0.025),
+                            mean(St$fishReel_n[St$Condition=="NO"]),
+                            mean(St$fishUnreel_n[St$Condition=="NO"]-0.21),
+                            mean(St$time_total_n[St$Condition=="NO"])), 
+                        x=c("NO","NO","NO","NO"),
+                        text=c("<b>  Fish Caught  </b>","<b>  Fish Reel  </b>","<b>  Fish Unreel  </b>","<b>  Duration  </b>")),
+            x=~x, y=~y, text=~text, textposition="top left", type='scatter', mode='text', color=I('black')) %>%
+  layout(showlegend=F, title="Condition Variability",
+         xaxis=list(title="Condition", range=c(-0.1,3.1), tickmode='array',
+                    tickvals=c(0,1,2,3), ticktext=c('Aug.<br>Success', 'Input<br>Override', 'Mit.<br>Failure', 'Ref.')),
+         yaxis=list(range=c(-0.1,1.1), title=" "))
+fig_c
+orca(fig_c, "fig/condition_variability.pdf", width=480, height=480)
+
+# This is effectively a visualization of what the mechanisms 'imply' to the game.
+# AS provides similar levels of unreels, less reels but higher number of caught fish.
+# IO provides higher caught fish, by altering the number of successful reels/unreels.
+# MF does not in itself boost the number of reels (? verify), but alters unreels.
 
 #fishCaught
 fig_c <- fig %>%
@@ -1139,3 +1940,248 @@ fig_p <- fig %>%
          yaxis=list(range=c(-0.1,1.1), title="Perc.Control"))
 fig_p
 
+#############
+# Hypothesis Confirmation
+#############
+
+#1: Perc. Control and Blink Conversion Rate
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(rate_blink,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1), title="Blink Rate"),
+         yaxis=list(range=c(-0.1,1.1), title="Perc. Control"))
+fig_p
+orca(fig_p, "fig/scatter_perc_blinkrate.pdf", width=450, height=300)
+
+#1: Perc. Control and Help Rate
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(rate_help,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1), title="Help Rate"),
+         yaxis=list(range=c(-0.1,1.1), title="Perc. Control"))
+fig_p
+orca(fig_p, "fig/scatter_perc_helprate.pdf", width=450, height=300)
+
+#1: Perc. Control and Fish Caught
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishCaught,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Caught"),
+         yaxis=list(range=c(-0.1,1.1), title="Perc. Control"))
+fig_p
+orca(fig_p, "fig/scatter_perc_fishCaught.pdf", width=450, height=300)
+
+#1: Perc. Control and Fish Reel
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishReel,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Reel"),
+         yaxis=list(range=c(-0.1,1.1), title="Perc. Control"))
+fig_p
+orca(fig_p, "fig/scatter_perc_fishReel.pdf", width=450, height=300)
+
+#1: Perc. Control and Fish Lost
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishLost,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Lost"),
+         yaxis=list(range=c(-0.1,1.1), title="Perc. Control"))
+fig_p
+orca(fig_p, "fig/scatter_perc_fishLost.pdf", width=450, height=300)
+
+#1: Perc. Control and Fish Unreel
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishUnreel,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Unreel"),
+         yaxis=list(range=c(-0.1,1.1), title="Perc. Control"))
+fig_p
+orca(fig_p, "fig/scatter_perc_fishUnreel.pdf", width=450, height=300)
+
+#2: Frustration and Fish Lost
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishLost,amount=.02), 
+            y=~jitter(FrustNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Lost"),
+         yaxis=list(range=c(-0.1,1.1), title="Frustration"))
+fig_p
+orca(fig_p, "fig/scatter_frust_fishLost.pdf", width=450, height=300)
+
+#1: Frustration and Fish Unreel
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishUnreel,amount=.02), 
+            y=~jitter(PercNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Unreel"),
+         yaxis=list(range=c(-0.1,1.1), title="Frustration"))
+fig_p
+orca(fig_p, "fig/scatter_frust_fishUnreel.pdf", width=450, height=300)
+
+#2: Frustration and Blink Conv Rate
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(rate_blink,amount=.02), 
+            y=~jitter(FrustNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1), title="Blink rate"),
+         yaxis=list(range=c(-0.1,1.1), title="Frustration"))
+fig_p
+orca(fig_p, "fig/scatter_frust_fishLost.pdf", width=450, height=300)
+
+#2: Frustration and Help Rate
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(rate_help,amount=.02), 
+            y=~jitter(FrustNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1), title="Help rate"),
+         yaxis=list(range=c(-0.1,1.1), title="Frustration"))
+fig_p
+orca(fig_p, "fig/scatter_frust_rate_help.pdf", width=450, height=300)
+
+#3: Help Quantity and Help Rate
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se) %>% filter(Condition != "NO"),
+            x=~jitter(rate_help,amount=.02), 
+            y=~jitter(HowMuchHelpNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1), title="Help rate"),
+         yaxis=list(range=c(-0.1,1.1), title="Help Quantity"))
+fig_p
+orca(fig_p, "fig/scatter_howmuchhelp_rate_help.pdf", width=450, height=300)
+
+#3: Help Quantity and Fish Lost
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se)  %>% filter(Condition != "NO"),
+            x=~jitter(fishLost,amount=.02), 
+            y=~jitter(HowMuchHelpNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish lost (n)"),
+         yaxis=list(range=c(-0.1,1.1), title="Help Quantity"))
+fig_p
+orca(fig_p, "fig/scatter_howmuchhelp_fish_lost.pdf", width=450, height=300)
+
+#1: Help Quantity and Fish Unreel
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se)  %>% filter(Condition != "NO"),
+            x=~jitter(fishUnreel,amount=.02), 
+            y=~jitter(HowMuchHelpNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Unreel"),
+         yaxis=list(range=c(-0.1,1.1), title="Help Quantity"))
+fig_p
+orca(fig_p, "fig/scatter_howmuchhelp_fishUnreel.pdf", width=450, height=300)
+
+#4: Help Appeal and fish Lost
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se)  %>% filter(Condition != "NO"),
+            x=~jitter(fishLost,amount=.02), 
+            y=~jitter(LikedHelpNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish lost (n)"),
+         yaxis=list(range=c(-0.1,1.1), title="Help Appeal"))
+fig_p
+orca(fig_p, "fig/scatter_likedhelp_fish_lost.pdf", width=450, height=300)
+
+#1: Help Quantity and Fish Unreel
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se) %>% filter(Condition != "NO"),
+            x=~jitter(fishUnreel,amount=.02), 
+            y=~jitter(LikedHelpNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Unreel"),
+         yaxis=list(range=c(-0.1,1.1), title="Help Appeal"))
+fig_p
+orca(fig_p, "fig/scatter_likedhelp_fishUnreel.pdf", width=450, height=300)
+
+#4: Help Appeal and fish caught
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se) %>% filter(Condition != "NO"),
+            x=~jitter(fishCaught,amount=.02), 
+            y=~jitter(LikedHelpNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish caught (n)"),
+         yaxis=list(range=c(-0.1,1.1), title="Help Appeal"))
+fig_p
+orca(fig_p, "fig/scatter_likedhelp_fish_caught.pdf", width=450, height=300)
+
+#4: Help Appeal and fish reel
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se) %>% filter(Condition != "NO"),
+            x=~jitter(fishReel,amount=.02), 
+            y=~jitter(LikedHelpNormalized,amount=.2), color=~Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish reel (n)"),
+         yaxis=list(range=c(-0.1,1.1), title="Help Appeal"))
+fig_p
+orca(fig_p, "fig/scatter_likedhelp_fish_reel.pdf", width=450, height=300)
+
+#5: Pacing and Duration
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(time_total,amount=.02), 
+            y=~jitter(PacingNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,200), title="Duration (s)"),
+         yaxis=list(range=c(-0.1,1.1), title="Pacing"))
+fig_p
+orca(fig_p, "fig/scatter_duration_pacing.pdf", width=450, height=300)
+
+#6: Irritation and Fish Lost
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishLost,amount=.02), 
+            y=~jitter(IrritationNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Lost (n)"),
+         yaxis=list(range=c(-0.1,1.1), title="Irritation"))
+fig_p
+orca(fig_p, "fig/scatter_fishLost_Irritation.pdf", width=450, height=300)
+
+#1: Irritation and Fish Unreel
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(fishUnreel,amount=.02), 
+            y=~jitter(IrritationNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,15), title="Fish Unreel"),
+         yaxis=list(range=c(-0.1,1.1), title="Irritation"))
+fig_p
+orca(fig_p, "fig/scatter_irritation_fishUnreel.pdf", width=450, height=300)
+
+#6: Irritation and Blink Conv Rate
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(rate_blink,amount=.02), 
+            y=~jitter(IrritationNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1), title="Blink Rate"), 
+         yaxis=list(range=c(-0.1,1.1), title="Irritation"))
+fig_p
+orca(fig_p, "fig/scatter_rate_blink_irritation.pdf", width=450, height=300)
+
+#6: Irritation and help rate
+fig_p <- fig %>%
+  add_trace(data=St %>% left_join(Se),
+            x=~jitter(rate_help,amount=.02), 
+            y=~jitter(IrritationNormalized,amount=.2), color=St$Condition,
+            opacity=.6,type='scatter', mode='markers+text', marker=list(size=7)) %>%
+  layout(xaxis=list(range=c(-0.1,1.1), title="Help Rate"),
+         yaxis=list(range=c(-0.1,1.1), title="Irritation"))
+fig_p
+orca(fig_p, "fig/scatter_rate_help_irritation.pdf", width=450, height=300)

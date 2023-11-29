@@ -17,7 +17,14 @@ load('data_pam_raw.rda')
 D <- D %>% rename(ConditionLabel = Condition, Condition = i3, Participant = i2)
 
 D <-D %>% mutate(Participant = as.numeric(Participant),
-                 Framecount = as.numeric(Framecount))
+                 TrialResult = ifelse(TrialResult == "NA", NA, TrialResult))
+                 #`Success BCI` = as.logical(`Success BCI`))
+
+# veryify all data is present
+#D %>% group_by(Participant, Condition) %>% 
+#  summarize(
+#    success_count = n()
+#  ) %>% view()
 
 
 # FishEvents happen outside Input Windows
@@ -53,10 +60,7 @@ D <- D %>% mutate(TrialFeedback = NA,
 #cv <- D %>% group_by(Participant, Condition, TrialFeedback) %>% filter(Event == "GameDecision") %>%
 #   summarize(n())
 # 
-#D %>% filter(Participant == 1, Condition == "AS", Event != "Sample") %>%
-#  select(Participant, Condition, Timestamp, Event,
-#         InputWindowOrder, TrialResult, TrialFeedback,
-#         fishFeedback, fishLost) %>% view()
+
 
 D = D %>% mutate(Timestamp = as.POSIXct(Timestamp, format = "%Y-%m-%d %H:%M:%OS")) %>%
   arrange(Timestamp) %>%
@@ -64,7 +68,22 @@ D = D %>% mutate(Timestamp = as.POSIXct(Timestamp, format = "%Y-%m-%d %H:%M:%OS"
          time_delta = as.numeric(time_delta),
          time_delta = ifelse(is.na(time_delta), 0, time_delta))
 
+# Create variable for locating GameDecisions within Rest periods and associating them to open periods.
+D = D %>% group_by(Participant, Condition) %>%
+  mutate(InputWindowOrderWithRest = InputWindowOrderFish,
+         InputWindowOrderWithRest = ifelse(Event == "GameStopped", -1, InputWindowOrderWithRest)) %>%
+  tidyr::fill(InputWindowOrderWithRest, .direction="down") %>%
+  mutate(InputWindowOrderWithRest = as.numeric(InputWindowOrderWithRest))
 
+#D %>% filter(Participant == 13) %>% select(Event, InputWindowOrder, InputWindowOrderWithRest, Condition) %>% view()    
+
+D = D %>% group_by(Participant, Condition, InputWindowOrderWithRest) %>% 
+  mutate(TrialResultWindow = TrialResult,
+         TrialFeedbackWindow = TrialFeedback) %>%
+  tidyr::fill(TrialResultWindow, .direction="up") %>%
+  tidyr::fill(TrialFeedbackWindow, .direction="up")
+
+#D %>% filter(Participant == 8) %>% select(Event, InputWindowOrder, InputWindowOrderWithRest,TrialResultWindow,TrialFeedbackWindow, Condition) %>% view()    
 
 # Filter out data happening before GameRunning event.
 # Filter out extra "GameStopped" events.
@@ -108,6 +127,7 @@ D = D %>% group_by(Participant, Condition) %>%
   tidyr::fill(InputWindowOrderFilled, .direction="down") %>%
   tidyr::fill(Period, .direction="down")
 
+
 # InputWindowOrder should be numeric but can contain the value "Stopped"
 # if the game was interrupted. Change "Stopped" to NA.
 D <-D %>% mutate(InputWindowOrder = as.numeric(InputWindowOrder),
@@ -130,6 +150,17 @@ D = D %>% group_by(Participant, Condition) %>%
          InputWindowOrderFilledSoft = ifelse( InputWindowOrderFilled != lead(InputWindowOrderFilled,2) &
                                                 InputWindowOrderFilled == -1 & 
                                                 lead(time_delta)+lead(time_delta,2) < 1.0, lead(InputWindowOrderFilled,2), InputWindowOrderFilledSoft))
+
+# Add PeriodWithDecision
+D = D %>% group_by(Participant, Condition) %>% mutate(
+  PeriodWithDecision = ifelse(Event == "GameDecision", "OpenPeriod", Period),
+  InputWindowOrderFilledSoft = ifelse(Event == "GameDecision", InputWindowOrderWithDecision, InputWindowOrderFilledSoft)
+)
+
+#D %>% filter(Participant == 1, Condition == "AS", Event != "Sample") %>%
+#  select(Participant, Condition, Timestamp, Event,
+#         InputWindowOrder, InputWindowOrderWithRest, InputWindowOrderWithDecision, InputWindowOrderFilledSoft, Period, PeriodWithDecision, TrialResult, TrialFeedback,
+#         fishFeedback, fishLost) %>% view()
 
 #############
 # Filter out invalid conditions
