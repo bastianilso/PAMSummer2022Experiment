@@ -262,3 +262,23 @@ D = D %>% mutate(Condition.f = factor(Condition, levels=c("NO", "AS","IO","MF"))
 # Save to RDA
 #############
 save(D, file = 'data_pam.rda', compress=TRUE)
+
+
+#############
+# For ML
+#############
+
+# For machine learning, it's important to rescale numbers to 0 and 1 and potentially even 'clamp' at 1, so that extremities still represent something within the distribution you are trying to make interpretations within.
+
+# For linear mixed models:
+
+# Scaling input variables in linear mixed models is a matter of personal preference and depends on the specific goals of the analysis and the data being used. There is no strict rule that requires scaling input variables to values between 0 and 1 when evaluating linear mixed models. However, scaling can have some benefits, such as improving the interpretation of the model coefficients, reducing multicollinearity, and improving convergence.
+# When scaling input variables, common methods include:
+# Standardization (z-score): Transforming variables to have a mean of 0 and a standard deviation of 1. This is done by subtracting the mean from each value and dividing by the standard deviation.
+# Min-max scaling: Transforming variables to have a minimum value of 0 and a maximum value of 1. This is done by subtracting the minimum value from each value and dividing by the range (maximum - minimum) of the variable.
+# These methods can make the interpretation of model coefficients easier, as they are all on the same scale. However, it's important to be consistent in how you scale your variables when comparing different models or conducting follow-up analyses.
+# It is worth noting that scaling input variables does not change the overall results of the model but may affect the interpretation of the coefficients and the model's convergence. Therefore, it's essential to consider the specific context and goals of your analysis when deciding whether to scale input variables in linear mixed models.
+# Scaling refers to transforming the input variables in a linear mixed model to have a different range or distribution, such as standardization or min-max scaling. The eigenvalue ratio is a measure of how well the model can be estimated, and large eigenvalue ratios can indicate that the model is nearly unidentifiable or has issues with multicollinearity.
+# When the message "Model is nearly unidentifiable: large eigenvalue ratio - Rescale variables" is displayed, it suggests that scaling the input variables might help improve the model's identifiability and address the large eigenvalue ratio issue.
+# By rescaling the input variables, you can potentially reduce multicollinearity, improve the model's convergence, and make the interpretation of the model coefficients easier. This can lead to more stable and reliable estimates of the model parameters, as well as better overall model performance.
+# However, it's essential to remember that scaling the input variables does not change the overall results of the model but may affect the interpretation of the coefficients and the model's convergence. Therefore, when deciding to rescale variables, it is crucial to consider the specific context and goals of your analysis.

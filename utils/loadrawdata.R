@@ -29,48 +29,53 @@ LoadFromDirectory <- function(dir, event = "Event", sample = "Sample", meta = "M
   df_event <- list.files(recursive=TRUE ,path = dir,
                       pattern = paste0(event,"\\.csv$"),
                       full.names = T) %>% 
-    tibble(filename = .) %>%   
+    tibble(filename = ., fID = .) %>%   
     mutate(file_contents = map(filename,~ read_delim(file.path(.), delim = sep, na = "NULL", col_types = cols(.default = "c"))))  %>% 
     unnest(cols=-filename) %>%
-    mutate(file_contents = NULL)
+    mutate(file_contents = NULL) %>%
+    mutate(fID = dirname(fID))
   }
   if (!is.null(sample)){
   #sample data
   df_sample <- list.files(recursive=TRUE ,path = dir,
                             pattern = paste0(sample,"\\.csv$"), 
                             full.names = T) %>% 
-    tibble(filename = .) %>%   
+    tibble(filename = ., fID = .) %>%   
     mutate(file_contents = map(filename,~ read_delim(file.path(.), delim = sep, na = "NULL", col_types = cols(.default = "c"))))  %>% 
     unnest(cols=-filename) %>%
-    mutate(file_contents = NULL)
+    mutate(file_contents = NULL) %>%
+    mutate(fID = dirname(fID))
   }
   if(!is.null(meta)){
   #meta data
   df_meta <- list.files(recursive=TRUE ,path = dir,
                              pattern = paste0(meta,"\\.csv$"), 
-                             full.names = T) %>% 
-    tibble(filename = .) %>%   
+                             full.names = T) %>%
+    tibble(filename = ., fID = .) %>%   
     mutate(file_contents = map(filename,~ read_delim(file.path(.), delim = sep, na = "NULL", col_types = cols(.default = "c"))))  %>% 
     unnest(cols=-filename) %>% 
     separate(col=filename,sep="_",into=c("i5","i6","i7","i8","i9"), remove=F) %>%
     separate(col=filename,sep="/",into=c("i0","i1","i2","i3","i4"), remove=T) %>%
-    mutate(file_contents = NULL)
-  
+    mutate(file_contents = NULL) %>%
+    mutate(fID = dirname(fID))
+    
+
   df_meta <- PreprocessMeta(df_meta)
   } else{
     
     df_meta <- list.files(recursive=TRUE ,path = dir,
                           pattern = meta, 
                           full.names = T) %>% 
-      tibble(filename = .) %>%   
+      tibble(filename = ., fID = .) %>%   
       unnest(cols=-filename) %>% 
       separate(col=filename,sep="_",into=c("i5","i6","i7","i8","i9"), remove=F) %>% 
       separate(col=filename,sep="/",into=c("i0","i1","i2","i3","i4"), remove=F) %>% 
-      add_column(SessionID= NA)
+      add_column(SessionID= NA) %>%
+      mutate(fID = dirname(fID))
     
   }
+
   dataset <- MergeDatasets(df_meta, df_event, df_sample)
-  
   return(dataset)
 }
 
@@ -89,12 +94,37 @@ PreprocessMeta <- function(dataset_meta) {
 
 MergeDatasets <- function(dataset_meta, dataset_event, dataset_sample) {
   df = data.frame()
-  if(length(na.omit(unique(dataset_meta$SessionID))) < 1){
+
+  test = !is.null(dataset_meta[["SessionID"]])
+  joinstring = ifelse(test, "SessionID", "fID")
+  test = length(na.omit(unique(dataset_meta[["SessionID"]]))) > 1
+  joinstring = ifelse(test, "SessionID", "fID")
+  browser()
+  if(joinstring != "fID") {
+    # Remove fID from dataset_meta if we dont use it.
+    dataset_meta = dataset_meta %>% mutate(fID = NULL) 
+  } else {
+    # Remove SessionID from dataset_meta if we dont use it.
     dataset_meta = dataset_meta %>% mutate(SessionID = NULL) 
-    df = dataset_event %>% bind_rows(dataset_sample) %>% left_join(dataset_meta, by="filename")
-  }else {
-    
-    df = dataset_event %>% bind_rows(dataset_sample) %>% left_join(dataset_meta, by = "SessionID")
   }
+  
+  # if event dataset is not null, use it.
+  if (!is.null(dataset_event)) {
+    df <- df %>% bind_rows(dataset_event)
+  }
+  # if sample dataset is not null, bind it.
+  if (!is.null(dataset_sample)) {
+    df <- df %>% bind_rows(dataset_sample)
+  }
+  # if meta dataset is not null, join it.
+  if (!is.null(dataset_meta)) {
+    if (!is.null(df[[joinstring]])) {
+      df <- df %>% left_join(dataset_meta, by=joinstring)
+    } else {
+      # if no filename column is present, metadata is the only data.
+      df <- dataset_meta
+    }
+  }
+  
   return(df)
 }

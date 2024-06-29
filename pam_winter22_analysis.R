@@ -28,6 +28,7 @@ load('data_pam.rda')
 # Summaries
 #############
 posTrialLabels = c("OverrideInput","AccInput","AugSuccess","ExplicitSham","AssistSuccess")
+posTrialLabels_user = c("AccInput","AugSuccess","AssistSuccess")
 
 # participants excluded due to blink recognition issues.
 excluded_participants = c(17)
@@ -140,7 +141,7 @@ St <- D %>% ungroup() %>% filter(PeriodWithDecision %in% c("OpenPeriod")) %>% gr
   filter(InputWindowOrderFilledSoft > -1) %>% ungroup() %>% group_by(Participant, Condition) %>%
   summarize(blink_recog_trial = sum(blink_recog_window > 0),
             blink_recog_window = sum(blink_recog_window),
-            blink_conv_trial = sum(blink_recog_window > 0 & TrialResult %in% posTrialLabels),
+            blink_conv_trial = sum(blink_recog_window > 0 & TrialResult %in% posTrialLabels_user),
             blink_recog_window_count = sum(blink_recog_window_count),
             time_window = sum(time_window),
             time_window_min = time_window / 60) %>%
@@ -462,7 +463,7 @@ fig_p = plot_ly(data = corr_table_f, x=~x, xgap=3, ygap=3, y=~y, z=~z,
          yaxis=list(title="", tickfont = list(size = 16),
                     categoryorder = "array",
                     categoryarray = corr_rowvars_f))
-orca(fig_p, "fig/corrmap_vars.pdf", width=1800, height=1800)
+orca(fig_p, "fig/corrmap_vars2.pdf", width=1800, height=1800)
 
 # cor(x = St[[x]], y = St[[y]])
 #StCorr = GGally::ggcorr(St %>% ungroup() %>% left_join(Se) 
@@ -1276,6 +1277,8 @@ glme_table <- table %>%
   select(Predicted, `Fixed Effect`, AIC, ML, LR, `$\\chi^2$`)
 message(paste(colnames(glme_table), collapse=" & "))
 message(paste(glme_table %>% apply(.,1,paste,collapse=" & "), collapse=" \\\\ "))
+
+model.null = clm(HowMuchHelp.f ~ 1 + (1|Participant), data=St %>% filter(Condition %in% c("AS","IO","MF")))
 
 St$Condition.f = factor(St$Condition.f, levels=c("MF","IO","AS","NO"))
 model.null = clm(HowMuchHelp.f ~ 1 + (1|Participant), data=St %>% filter(Condition %in% c("AS","IO","MF")))
